@@ -23,7 +23,6 @@ class BasicDataset(Dataset):
     This class supports strong augmentation for Fixmatch,
     and return both weakly and strongly augmented images.
     """
-
     def __init__(self,
                  alg,
                  data,
@@ -58,8 +57,10 @@ class BasicDataset(Dataset):
         self.strong_transform = strong_transform
         if self.strong_transform is None:
             if self.is_ulb:
-                assert self.alg not in ['fullysupervised', 'supervised', 'pseudolabel', 'vat', 'pimodel', 'meanteacher',
-                                        'mixmatch'], f"alg {self.alg} requires strong augmentation"
+                assert self.alg not in [
+                    'fullysupervised', 'supervised', 'pseudolabel', 'vat',
+                    'pimodel', 'meanteacher', 'mixmatch'
+                ], f"alg {self.alg} requires strong augmentation"
 
     def __sample__(self, idx):
         """ dataset specific sample function """
@@ -68,7 +69,8 @@ class BasicDataset(Dataset):
             target = None
         else:
             target_ = self.targets[idx]
-            target = target_ if not self.onehot else get_onehot(self.num_classes, target_)
+            target = target_ if not self.onehot else get_onehot(
+                self.num_classes, target_)
 
         # set augmented images
         img = self.data[idx]
@@ -94,8 +96,13 @@ class BasicDataset(Dataset):
             img_w = self.transform(img)
             if not self.is_ulb:
                 if self.alg in ['openmatch']:
-                    return {'idx_lb': idx, 'x_lb': img_w, 'x_lb_w_0': img_w, 'x_lb_w_1': self.transform(img),
-                            'y_lb': target}
+                    return {
+                        'idx_lb': idx,
+                        'x_lb': img_w,
+                        'x_lb_w_0': img_w,
+                        'x_lb_w_1': self.transform(img),
+                        'y_lb': target
+                    }
                 else:
                     return {'idx_lb': idx, 'x_lb': img_w, 'y_lb': target}
             else:
@@ -105,25 +112,54 @@ class BasicDataset(Dataset):
                     return {'idx_ulb': idx, 'x_ulb_w': img_w}
                 elif self.alg == 'mixmatch':
                     # NOTE x_ulb_s here is weak augmentation
-                    return {'idx_ulb': idx, 'x_ulb_w': img_w, 'x_ulb_s': self.transform(img), 'y_ulb': target}
+                    return {
+                        'idx_ulb': idx,
+                        'x_ulb_w': img_w,
+                        'x_ulb_s': self.transform(img),
+                        'y_ulb': target
+                    }
                 elif self.alg == 'remixmatch':
                     rotate_v_list = [0, 90, 180, 270]
                     rotate_v1 = np.random.choice(rotate_v_list, 1).item()
                     img_s1 = self.strong_transform(img)
-                    img_s1_rot = torchvision.transforms.functional.rotate(img_s1, rotate_v1)
+                    img_s1_rot = torchvision.transforms.functional.rotate(
+                        img_s1, rotate_v1)
                     img_s2 = self.strong_transform(img)
-                    return {'idx_ulb': idx, 'x_ulb_w': img_w, 'x_ulb_s_0': img_s1, 'x_ulb_s_1': img_s2,
-                            'x_ulb_s_0_rot': img_s1_rot, 'rot_v': rotate_v_list.index(rotate_v1)}
+                    return {
+                        'idx_ulb': idx,
+                        'x_ulb_w': img_w,
+                        'x_ulb_s_0': img_s1,
+                        'x_ulb_s_1': img_s2,
+                        'x_ulb_s_0_rot': img_s1_rot,
+                        'rot_v': rotate_v_list.index(rotate_v1)
+                    }
                 elif self.alg == 'comatch':
-                    return {'idx_ulb': idx, 'x_ulb_w': img_w,
-                            'x_ulb_s_0': self.strong_transform(img), 'x_ulb_s_1': self.strong_transform(img)}
+                    return {
+                        'idx_ulb': idx,
+                        'x_ulb_w': img_w,
+                        'x_ulb_s_0': self.strong_transform(img),
+                        'x_ulb_s_1': self.strong_transform(img)
+                    }
                 elif self.alg in ['mtc', 'openmatch']:
-                    return {'idx_ulb': idx, 'x_ulb_w_0': img_w, 'x_ulb_w_1': self.transform(img), 'y_ulb': target}
+                    return {
+                        'idx_ulb': idx,
+                        'x_ulb_w_0': img_w,
+                        'x_ulb_w_1': self.transform(img),
+                        'y_ulb': target
+                    }
                 elif self.alg == 'openmatch_select':
-                    return {'x_ulb_w': img_w, 'x_ulb_s': self.strong_transform(img)}
+                    return {
+                        'x_ulb_w': img_w,
+                        'x_ulb_s': self.strong_transform(img)
+                    }
                 else:
                     # y_ulb should be only used for evaluating pseudo-labels and be never used for training
-                    return {'idx_ulb': idx, 'x_ulb_w': img_w, 'x_ulb_s': self.strong_transform(img), 'y_ulb': target}
+                    return {
+                        'idx_ulb': idx,
+                        'x_ulb_w': img_w,
+                        'x_ulb_s': self.strong_transform(img),
+                        'y_ulb': target
+                    }
 
     def __len__(self):
         return len(self.data)

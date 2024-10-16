@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_s
 
 import torch
 import torch.nn.functional as F
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 
 from semilearn.core.hooks import Hook, get_priority, CheckpointHook, TimerHook, LoggingHook, DistSamplerSeedHook, \
     ParamUpdateHook, EvaluationHook, EMAHook
