@@ -20,12 +20,13 @@ def get_net_builder(net_name, from_name: bool):
     """
     if from_name:
         import torchvision.models as nets
-        model_name_list = sorted(name for name in nets.__dict__
-                                 if name.islower() and not name.startswith("__")
-                                 and callable(nets.__dict__[name]))
+        model_name_list = sorted(
+            name for name in nets.__dict__ if name.islower()
+            and not name.startswith("__") and callable(nets.__dict__[name]))
 
         if net_name not in model_name_list:
-            assert Exception(f"[!] Networks\' Name is wrong, check net config, \
+            assert Exception(
+                f"[!] Networks\' Name is wrong, check net config, \
                                expected: {model_name_list}  \
                                received: {net_name}")
         else:
@@ -42,11 +43,13 @@ def get_logger(name, save_path=None, level='INFO'):
     create logger function
     """
     logger = logging.getLogger(name)
-    logging.basicConfig(format='[%(asctime)s %(levelname)s] %(message)s', level=getattr(logging, level))
+    logging.basicConfig(format='[%(asctime)s %(levelname)s] %(message)s',
+                        level=getattr(logging, level))
 
     if not save_path is None:
         os.makedirs(save_path, exist_ok=True)
-        log_format = logging.Formatter('[%(asctime)s %(levelname)s] %(message)s')
+        log_format = logging.Formatter(
+            '[%(asctime)s %(levelname)s] %(message)s')
         fileHandler = logging.FileHandler(os.path.join(save_path, 'log.txt'))
         fileHandler.setFormatter(log_format)
         logger.addHandler(fileHandler)
@@ -54,8 +57,14 @@ def get_logger(name, save_path=None, level='INFO'):
     return logger
 
 
-def get_dataset(args, algorithm, dataset, num_labels, num_classes, data_dir='./data',
-                include_lb_to_ulb=True, eval_open=False):
+def get_dataset(args,
+                algorithm,
+                dataset,
+                num_labels,
+                num_classes,
+                data_dir='./data',
+                include_lb_to_ulb=True,
+                eval_open=False):
     """
     create dataset
 
@@ -70,17 +79,32 @@ def get_dataset(args, algorithm, dataset, num_labels, num_classes, data_dir='./d
     """
     from semilearn.datasets import get_cifar_openset, get_imagenet30
     from semilearn.datasets import svhn_as_ood, lsun_as_ood, gaussian_as_ood, uniform_as_ood
-    get_ood_funcs = {'svhn': svhn_as_ood, 'lsun': lsun_as_ood, 'gaussian': gaussian_as_ood, 'uniform': uniform_as_ood}
+    get_ood_funcs = {
+        'svhn': svhn_as_ood,
+        'lsun': lsun_as_ood,
+        'gaussian': gaussian_as_ood,
+        'uniform': uniform_as_ood
+    }
 
     test_dset = None
     if dataset in ["cifar10_openset", "cifar100_openset"]:
-        lb_dset, ulb_dset, eval_dset, eval_full_dset = get_cifar_openset(args, algorithm, dataset, num_labels,
-                                                                         num_classes, data_dir=data_dir)
+        lb_dset, ulb_dset, eval_dset, eval_full_dset = get_cifar_openset(
+            args,
+            algorithm,
+            dataset,
+            num_labels,
+            num_classes,
+            data_dir=data_dir)
         if eval_open:
             test_dset = {'full': eval_full_dset}
     elif dataset == 'imagenet30':
-        lb_dset, ulb_dset, eval_dset, eval_full_dset = get_imagenet30(args, algorithm, dataset, args.labeled_percent,
-                                                                      num_classes, data_dir=data_dir)
+        lb_dset, ulb_dset, eval_dset, eval_full_dset = get_imagenet30(
+            args,
+            algorithm,
+            dataset,
+            args.labeled_percent,
+            num_classes,
+            data_dir=data_dir)
         if eval_open:
             test_dset = {'full': eval_full_dset}
     else:
@@ -91,14 +115,21 @@ def get_dataset(args, algorithm, dataset, num_labels, num_classes, data_dir='./d
         ood_names = ['svhn', 'lsun', 'gaussian', 'uniform']
         ood_dsets = []
         for ood_name in ood_names:
-            dset = get_ood_funcs[ood_name](args, data_dir=data_dir, len_per_dset=10000)
+            dset = get_ood_funcs[ood_name](args,
+                                           data_dir=data_dir,
+                                           len_per_dset=10000)
             dset.targets = dset.targets + num_existing_classes
             num_existing_classes += dset.num_classes
             ood_dsets.append(dset)
         test_dset['extended'] = ConcatDataset(ood_dsets)
         test_dset['ood_dsets'] = ood_dsets
 
-    dataset_dict = {'train_lb': lb_dset, 'train_ulb': ulb_dset, 'eval': eval_dset, 'test': test_dset}
+    dataset_dict = {
+        'train_lb': lb_dset,
+        'train_ulb': ulb_dset,
+        'eval': eval_dset,
+        'test': test_dset
+    }
     return dataset_dict
 
 
@@ -129,12 +160,17 @@ def get_data_loader(args,
         num_epochs = args.epoch
     if num_iters is None:
         num_iters = args.num_train_iter
-        
+
     collect_fn = get_collector(args, args.net)
 
     if data_sampler is None:
-        return DataLoader(dset, batch_size=batch_size, shuffle=shuffle, collate_fn=collect_fn,
-                          num_workers=num_workers, drop_last=drop_last, pin_memory=pin_memory)
+        return DataLoader(dset,
+                          batch_size=batch_size,
+                          shuffle=shuffle,
+                          collate_fn=collect_fn,
+                          num_workers=num_workers,
+                          drop_last=drop_last,
+                          pin_memory=pin_memory)
 
     if isinstance(data_sampler, str):
         data_sampler = name2sampler[data_sampler]
@@ -150,20 +186,42 @@ def get_data_loader(args,
         per_epoch_steps = num_iters // num_epochs
         num_samples = per_epoch_steps * batch_size * num_replicas
 
-        return DataLoader(dset, batch_size=batch_size, shuffle=False, num_workers=num_workers, collate_fn=collect_fn,
-                          pin_memory=pin_memory, sampler=data_sampler(dset, num_replicas=num_replicas, rank=rank, num_samples=num_samples),
-                          generator=generator, drop_last=drop_last)
+        return DataLoader(dset,
+                          batch_size=batch_size,
+                          shuffle=False,
+                          num_workers=num_workers,
+                          collate_fn=collect_fn,
+                          pin_memory=pin_memory,
+                          sampler=data_sampler(dset,
+                                               num_replicas=num_replicas,
+                                               rank=rank,
+                                               num_samples=num_samples),
+                          generator=generator,
+                          drop_last=drop_last)
 
     elif isinstance(data_sampler, torch.utils.data.Sampler):
-        return DataLoader(dset, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-                          collate_fn=collect_fn, pin_memory=pin_memory, sampler=data_sampler,
-                          generator=generator, drop_last=drop_last)
+        return DataLoader(dset,
+                          batch_size=batch_size,
+                          shuffle=False,
+                          num_workers=num_workers,
+                          collate_fn=collect_fn,
+                          pin_memory=pin_memory,
+                          sampler=data_sampler,
+                          generator=generator,
+                          drop_last=drop_last)
 
     else:
         raise Exception(f"unknown data sampler {data_sampler}.")
 
 
-def get_optimizer(net, optim_name='SGD', lr=0.1, momentum=0.9, weight_decay=0, layer_decay=1.0, nesterov=True, bn_wd_skip=True):
+def get_optimizer(net,
+                  optim_name='SGD',
+                  lr=0.1,
+                  momentum=0.9,
+                  weight_decay=0,
+                  layer_decay=1.0,
+                  nesterov=True,
+                  bn_wd_skip=True):
     '''
     return optimizer (name) in torch.optim.
     If bn_wd_skip, the optimizer does not apply
@@ -174,17 +232,28 @@ def get_optimizer(net, optim_name='SGD', lr=0.1, momentum=0.9, weight_decay=0, l
     no_decay = {}
     if hasattr(net, 'no_weight_decay') and bn_wd_skip:
         no_decay = net.no_weight_decay()
-    
+
     if layer_decay != 1.0:
-        per_param_args = param_groups_layer_decay(net, lr, weight_decay, no_weight_decay_list=no_decay, layer_decay=layer_decay)
+        per_param_args = param_groups_layer_decay(
+            net,
+            lr,
+            weight_decay,
+            no_weight_decay_list=no_decay,
+            layer_decay=layer_decay)
     else:
-        per_param_args = param_groups_weight_decay(net, weight_decay, no_weight_decay_list=no_decay)
+        per_param_args = param_groups_weight_decay(
+            net, weight_decay, no_weight_decay_list=no_decay)
 
     if optim_name == 'SGD':
-        optimizer = torch.optim.SGD(per_param_args, lr=lr, momentum=momentum, weight_decay=weight_decay,
+        optimizer = torch.optim.SGD(per_param_args,
+                                    lr=lr,
+                                    momentum=momentum,
+                                    weight_decay=weight_decay,
                                     nesterov=nesterov)
     elif optim_name == 'AdamW':
-        optimizer = torch.optim.AdamW(per_param_args, lr=lr, weight_decay=weight_decay)
+        optimizer = torch.optim.AdamW(per_param_args,
+                                      lr=lr,
+                                      weight_decay=weight_decay)
 
     return optimizer
 
@@ -199,6 +268,7 @@ def get_cosine_schedule_with_warmup(optimizer,
     if warmup is needed, set num_warmup_steps (int) > 0.
     '''
     from torch.optim.lr_scheduler import LambdaLR
+
     def _lr_lambda(current_step):
         '''
         _lr_lambda returns a multiplicative factor given an interger parameter epochs.
@@ -209,7 +279,8 @@ def get_cosine_schedule_with_warmup(optimizer,
             _lr = float(current_step) / float(max(1, num_warmup_steps))
         else:
             num_cos_steps = float(current_step - num_warmup_steps)
-            num_cos_steps = num_cos_steps / float(max(1, num_training_steps - num_warmup_steps))
+            num_cos_steps = num_cos_steps / float(
+                max(1, num_training_steps - num_warmup_steps))
             _lr = max(0.0, math.cos(math.pi * num_cycles * num_cos_steps))
         return _lr
 
@@ -223,7 +294,7 @@ def get_port():
     pscmd = "netstat -ntl |grep -v Active| grep -v Proto|awk '{print $4}'|awk -F: '{print $NF}'"
     procs = os.popen(pscmd).read()
     procarr = procs.split("\n")
-    tt= random.randint(15000, 30000)
+    tt = random.randint(15000, 30000)
     if tt not in procarr:
         return tt
     else:

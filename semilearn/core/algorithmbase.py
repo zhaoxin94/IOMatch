@@ -31,14 +31,7 @@ class AlgorithmBase:
             - logger (`logging.Logger`):
                 logger to use
     """
-
-    def __init__(
-            self,
-            args,
-            net_builder,
-            tb_log=None,
-            logger=None,
-            **kwargs):
+    def __init__(self, args, net_builder, tb_log=None, logger=None, **kwargs):
 
         # common arguments
         self.tb_dict = None
@@ -95,8 +88,9 @@ class AlgorithmBase:
         # self.init(**kwargs)
 
         # set common hooks during training
-        self._hooks = []  # record underlying hooks 
-        self.hooks_dict = OrderedDict()  # actual object to be used to call hooks
+        self._hooks = []  # record underlying hooks
+        self.hooks_dict = OrderedDict(
+        )  # actual object to be used to call hooks
         self.set_hooks()
 
     def init(self, **kwargs):
@@ -108,12 +102,16 @@ class AlgorithmBase:
     def set_dataset(self):
         if self.rank != 0 and self.distributed:
             torch.distributed.barrier()
-        dataset_dict = get_dataset(self.args, self.algorithm, self.args.dataset, self.args.num_labels,
+        dataset_dict = get_dataset(self.args, self.algorithm,
+                                   self.args.dataset, self.args.num_labels,
                                    self.args.num_classes, self.args.data_dir)
-        self.args.ulb_dest_len = len(dataset_dict['train_ulb']) if dataset_dict['train_ulb'] is not None else 0
+        self.args.ulb_dest_len = len(
+            dataset_dict['train_ulb']
+        ) if dataset_dict['train_ulb'] is not None else 0
         self.args.lb_dest_len = len(dataset_dict['train_lb'])
         self.print_fn(
-            "unlabeled data number: {}, labeled data number {}".format(self.args.ulb_dest_len, self.args.lb_dest_len))
+            "unlabeled data number: {}, labeled data number {}".format(
+                self.args.ulb_dest_len, self.args.lb_dest_len))
         if self.rank == 0 and self.distributed:
             torch.distributed.barrier()
         return dataset_dict
@@ -121,66 +119,74 @@ class AlgorithmBase:
     def set_data_loader(self):
         self.print_fn("Create train and test data loaders")
         loader_dict = {}
-        loader_dict['train_lb'] = get_data_loader(self.args,
-                                                  self.dataset_dict['train_lb'],
-                                                  self.args.batch_size,
-                                                  data_sampler=self.args.train_sampler,
-                                                  num_iters=self.num_train_iter,
-                                                  num_epochs=self.epochs,
-                                                  num_workers=self.args.num_workers,
-                                                  distributed=self.distributed)
+        loader_dict['train_lb'] = get_data_loader(
+            self.args,
+            self.dataset_dict['train_lb'],
+            self.args.batch_size,
+            data_sampler=self.args.train_sampler,
+            num_iters=self.num_train_iter,
+            num_epochs=self.epochs,
+            num_workers=self.args.num_workers,
+            distributed=self.distributed)
 
-        loader_dict['train_ulb'] = get_data_loader(self.args,
-                                                   self.dataset_dict['train_ulb'],
-                                                   self.args.batch_size * self.args.uratio,
-                                                   data_sampler=self.args.train_sampler,
-                                                   num_iters=self.num_train_iter,
-                                                   num_epochs=self.epochs,
-                                                   num_workers=2 * self.args.num_workers,
-                                                   distributed=self.distributed)
+        loader_dict['train_ulb'] = get_data_loader(
+            self.args,
+            self.dataset_dict['train_ulb'],
+            self.args.batch_size * self.args.uratio,
+            data_sampler=self.args.train_sampler,
+            num_iters=self.num_train_iter,
+            num_epochs=self.epochs,
+            num_workers=2 * self.args.num_workers,
+            distributed=self.distributed)
 
-        loader_dict['eval'] = get_data_loader(self.args,
-                                              self.dataset_dict['eval'],
-                                              self.args.eval_batch_size,
-                                              # make sure data_sampler is None for evaluation
-                                              data_sampler=None,
-                                              num_workers=self.args.num_workers,
-                                              drop_last=False)
+        loader_dict['eval'] = get_data_loader(
+            self.args,
+            self.dataset_dict['eval'],
+            self.args.eval_batch_size,
+            # make sure data_sampler is None for evaluation
+            data_sampler=None,
+            num_workers=self.args.num_workers,
+            drop_last=False)
 
         if self.dataset_dict['test'] is not None:
             if isinstance(self.dataset_dict['test'], dict):
                 loader_dict['test'] = {}
                 for k, v in self.dataset_dict['test'].items():
                     if v is not None:
-                        loader_dict['test'][k] = get_data_loader(self.args,
-                                                                 self.dataset_dict['test'][k],
-                                                                 self.args.eval_batch_size,
-                                                                 # make sure data_sampler is None for evaluation
-                                                                 data_sampler=None,
-                                                                 num_workers=self.args.num_workers,
-                                                                 drop_last=False)
+                        loader_dict['test'][k] = get_data_loader(
+                            self.args,
+                            self.dataset_dict['test'][k],
+                            self.args.eval_batch_size,
+                            # make sure data_sampler is None for evaluation
+                            data_sampler=None,
+                            num_workers=self.args.num_workers,
+                            drop_last=False)
             else:
-                loader_dict['test'] = get_data_loader(self.args,
-                                                      self.dataset_dict['test'],
-                                                      self.args.eval_batch_size,
-                                                      # make sure data_sampler is None for evaluation
-                                                      data_sampler=None,
-                                                      num_workers=self.args.num_workers,
-                                                      drop_last=False)
+                loader_dict['test'] = get_data_loader(
+                    self.args,
+                    self.dataset_dict['test'],
+                    self.args.eval_batch_size,
+                    # make sure data_sampler is None for evaluation
+                    data_sampler=None,
+                    num_workers=self.args.num_workers,
+                    drop_last=False)
         self.print_fn(f'[!] data loader keys: {loader_dict.keys()}')
         return loader_dict
 
     def set_optimizer(self):
         self.print_fn("Create optimizer and scheduler")
-        optimizer = get_optimizer(self.model, self.args.optim, self.args.lr, self.args.momentum, self.args.weight_decay,
+        optimizer = get_optimizer(self.model, self.args.optim, self.args.lr,
+                                  self.args.momentum, self.args.weight_decay,
                                   self.args.layer_decay)
-        scheduler = get_cosine_schedule_with_warmup(optimizer,
-                                                    self.num_train_iter,
-                                                    num_warmup_steps=self.args.num_warmup_iter)
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            self.num_train_iter,
+            num_warmup_steps=self.args.num_warmup_iter)
         return optimizer, scheduler
 
     def set_model(self):
-        model = self.net_builder(num_classes=self.num_classes, pretrained=self.args.use_pretrain,
+        model = self.net_builder(num_classes=self.num_classes,
+                                 pretrained=self.args.use_pretrain,
                                  pretrained_path=self.args.pretrain_path)
         return model
 
@@ -237,7 +243,7 @@ class AlgorithmBase:
         """
         # implement train step for each algorithm
         # compute loss
-        # update model 
+        # update model
         # record tb_dict
         # return tb_dict
         raise NotImplementedError
@@ -265,7 +271,8 @@ class AlgorithmBase:
                     break
 
                 self.call_hook("before_train_step")
-                self.tb_dict = self.train_step(**self.process_batch(**data_lb, **data_ulb))
+                self.tb_dict = self.train_step(
+                    **self.process_batch(**data_lb, **data_ulb))
                 self.call_hook("after_train_step")
                 self.it += 1
 
@@ -327,7 +334,10 @@ class AlgorithmBase:
         #              eval_dest + '/balanced_acc': balanced_top1, eval_dest + '/precision': precision,
         #              eval_dest + '/recall': recall, eval_dest + '/F1': F1}
 
-        eval_dict = {eval_dest + '/loss': total_loss / total_num, eval_dest + '/top-1-acc': top1}
+        eval_dict = {
+            eval_dest + '/loss': total_loss / total_num,
+            eval_dest + '/top-1-acc': top1
+        }
 
         if return_logits:
             eval_dict[eval_dest + '/logits'] = y_logits
@@ -437,7 +447,8 @@ class AlgorithmBase:
         """
 
         if hook_name is not None:
-            return getattr(self.hooks_dict[hook_name], fn_name)(self, *args, **kwargs)
+            return getattr(self.hooks_dict[hook_name], fn_name)(self, *args,
+                                                                **kwargs)
 
         for hook in self.hooks_dict.values():
             if hasattr(hook, fn_name):

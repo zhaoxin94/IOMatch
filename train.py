@@ -18,8 +18,8 @@ from semilearn.core.utils import get_net_builder, get_logger, get_port, send_mod
 
 
 def get_config():
-    parser = argparse.ArgumentParser(description='Open-Set Semi-Supervised Learning Framework')
-
+    parser = argparse.ArgumentParser(
+        description='Open-Set Semi-Supervised Learning Framework')
     '''
     Saving & loading of the model.
     '''
@@ -28,30 +28,52 @@ def get_config():
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--load_path', type=str)
     parser.add_argument('-o', '--overwrite', action='store_true', default=True)
-    parser.add_argument('--use_tensorboard', action='store_true', help='Use tensorboard to plot and save curves, otherwise save the curves locally.')
-
+    parser.add_argument(
+        '--use_tensorboard',
+        action='store_true',
+        help=
+        'Use tensorboard to plot and save curves, otherwise save the curves locally.'
+    )
     '''
     Training Configuration of FixMatch
     '''
 
     parser.add_argument('--epoch', type=int, default=512)
-    parser.add_argument('--num_train_iter', type=int, default=524288,
+    parser.add_argument('--num_train_iter',
+                        type=int,
+                        default=524288,
                         help='total number of training iterations')
-    parser.add_argument('--num_warmup_iter', type=int, default=0,
+    parser.add_argument('--num_warmup_iter',
+                        type=int,
+                        default=0,
                         help='cosine linear warmup iterations')
-    parser.add_argument('--num_eval_iter', type=int, default=1024,
+    parser.add_argument('--num_eval_iter',
+                        type=int,
+                        default=1024,
                         help='evaluation frequency')
-    parser.add_argument('--num_log_iter', type=int, default=128,
+    parser.add_argument('--num_log_iter',
+                        type=int,
+                        default=128,
                         help='logging frequency')
     parser.add_argument('-nl', '--num_labels', type=int, default=250)
     parser.add_argument('-bsz', '--batch_size', type=int, default=64)
-    parser.add_argument('--uratio', type=int, default=1,
-                        help='the ratio of unlabeled data to labeld data in each mini-batch')
-    parser.add_argument('--eval_batch_size', type=int, default=256,
-                        help='batch size of evaluation data loader (it does not affect the accuracy)')
-    parser.add_argument('--ema_m', type=float, default=0.999, help='ema momentum for eval_model')
+    parser.add_argument(
+        '--uratio',
+        type=int,
+        default=1,
+        help='the ratio of unlabeled data to labeld data in each mini-batch')
+    parser.add_argument(
+        '--eval_batch_size',
+        type=int,
+        default=256,
+        help=
+        'batch size of evaluation data loader (it does not affect the accuracy)'
+    )
+    parser.add_argument('--ema_m',
+                        type=float,
+                        default=0.999,
+                        help='ema momentum for eval_model')
     parser.add_argument('--ulb_loss_ratio', type=float, default=1.0)
-
     '''
     Optimizer configurations
     '''
@@ -59,8 +81,13 @@ def get_config():
     parser.add_argument('--lr', type=float, default=3e-2)
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--weight_decay', type=float, default=5e-4)
-    parser.add_argument('--layer_decay', type=float, default=1.0, help='layer-wise learning rate decay, default to 1.0 which means no layer decay')
-
+    parser.add_argument(
+        '--layer_decay',
+        type=float,
+        default=1.0,
+        help=
+        'layer-wise learning rate decay, default to 1.0 which means no layer decay'
+    )
     '''
     Backbone Net Configurations
     '''
@@ -68,21 +95,29 @@ def get_config():
     parser.add_argument('--net_from_name', type=str2bool, default=False)
     parser.add_argument('--use_pretrain', default=False, type=str2bool)
     parser.add_argument('--pretrain_path', default='', type=str)
-
     '''
     Algorithms Configurations
-    '''  
+    '''
 
     ## core algorithm setting
-    parser.add_argument('-alg', '--algorithm', type=str, default='fixmatch', help='ssl algorithm')
-    parser.add_argument('--use_cat', type=str2bool, default=True, help='use cat operation in algorithms')
-    parser.add_argument('--use_amp', type=str2bool, default=False, help='use mixed precision training or not')
+    parser.add_argument('-alg',
+                        '--algorithm',
+                        type=str,
+                        default='fixmatch',
+                        help='ssl algorithm')
+    parser.add_argument('--use_cat',
+                        type=str2bool,
+                        default=True,
+                        help='use cat operation in algorithms')
+    parser.add_argument('--use_amp',
+                        type=str2bool,
+                        default=False,
+                        help='use mixed precision training or not')
     parser.add_argument('--clip_grad', type=float, default=0)
 
     ## open-set setting
     parser.add_argument('--pure_unlabeled', type=str2bool, default=False)
     # parser.add_argument('--num_super_classes', type=int, default=10, help='number of seen super classes for CIFAR100')
-
     '''
     Data Configurations
     '''
@@ -94,40 +129,51 @@ def get_config():
     parser.add_argument('--train_sampler', type=str, default='RandomSampler')
     parser.add_argument('--num_workers', type=int, default=1)
 
-
     ## cv dataset arguments
     parser.add_argument('--img_size', type=int, default=32)
     parser.add_argument('--crop_ratio', type=float, default=0.875)
 
-    ## nlp dataset arguments 
+    ## nlp dataset arguments
     parser.add_argument('--max_length', type=int, default=512)
 
     ## speech dataset algorithms
     parser.add_argument('--max_length_seconds', type=float, default=4.0)
     parser.add_argument('--sample_rate', type=int, default=16000)
-
     '''
     multi-GPUs & Distrbitued Training
     '''
 
     ## args for distributed training (from https://github.com/pytorch/examples/blob/master/imagenet/main.py)
-    parser.add_argument('--world-size', default=1, type=int,
+    parser.add_argument('--world-size',
+                        default=1,
+                        type=int,
                         help='number of nodes for distributed training')
-    parser.add_argument('--rank', default=0, type=int,
+    parser.add_argument('--rank',
+                        default=0,
+                        type=int,
                         help='**node rank** for distributed training')
-    parser.add_argument('-du', '--dist-url', default='tcp://127.0.0.1:11111', type=str,
+    parser.add_argument('-du',
+                        '--dist-url',
+                        default='tcp://127.0.0.1:11111',
+                        type=str,
                         help='url used to set up distributed training')
-    parser.add_argument('--dist-backend', default='nccl', type=str,
+    parser.add_argument('--dist-backend',
+                        default='nccl',
+                        type=str,
                         help='distributed backend')
-    parser.add_argument('--seed', default=1, type=int,
+    parser.add_argument('--seed',
+                        default=1,
+                        type=int,
                         help='seed for initializing training. ')
-    parser.add_argument('--gpu', default=None, type=int,
-                        help='GPU id to use.')
-    parser.add_argument('--multiprocessing-distributed', type=str2bool, default=False,
-                        help='Use multi-processing distributed training to launch '
-                             'N processes per node, which has N GPUs. This is the '
-                             'fastest way to use PyTorch for either single node or '
-                             'multi node data parallel training')
+    parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
+    parser.add_argument(
+        '--multiprocessing-distributed',
+        type=str2bool,
+        default=False,
+        help='Use multi-processing distributed training to launch '
+        'N processes per node, which has N GPUs. This is the '
+        'fastest way to use PyTorch for either single node or '
+        'multi node data parallel training')
     # config file
     parser.add_argument('--c', type=str, default='')
 
@@ -135,12 +181,14 @@ def get_config():
     args = parser.parse_args()
     over_write_args_from_file(args, args.c)
     for argument in name2alg[args.algorithm].get_argument():
-        parser.add_argument(argument.name, type=argument.type, default=argument.default, help=argument.help)
+        parser.add_argument(argument.name,
+                            type=argument.type,
+                            default=argument.default,
+                            help=argument.help)
 
     args = parser.parse_args()
     over_write_args_from_file(args, args.c)
     return args
-
 
 
 def main(args):
@@ -160,10 +208,13 @@ def main(args):
         raise Exception('already existing model: {}'.format(save_path))
     if args.resume:
         if args.load_path is None:
-            raise Exception('Resume of training requires --load_path in the args')
-        if os.path.abspath(save_path) == os.path.abspath(args.load_path) and not args.overwrite:
+            raise Exception(
+                'Resume of training requires --load_path in the args')
+        if os.path.abspath(save_path) == os.path.abspath(
+                args.load_path) and not args.overwrite:
             raise Exception('Saving & Loading pathes are same. \
-                            If you want over-write, give --overwrite in the argument.')
+                            If you want over-write, give --overwrite in the argument.'
+                            )
 
     if args.seed is not None:
         warnings.warn('You have chosen to seed training. '
@@ -171,7 +222,7 @@ def main(args):
                       'which can slow down your training considerably! '
                       'You may see unexpected behavior when restarting '
                       'from checkpoints.')
-    
+
     if args.gpu == 'None':
         args.gpu = None
     if args.gpu is not None:
@@ -190,7 +241,9 @@ def main(args):
         args.world_size = ngpus_per_node * args.world_size
 
         # args=(,) means the arguments of main_worker
-        mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
+        mp.spawn(main_worker,
+                 nprocs=ngpus_per_node,
+                 args=(ngpus_per_node, args))
     else:
         main_worker(args.gpu, ngpus_per_node, args)
 
@@ -220,22 +273,28 @@ def main_worker(gpu, ngpus_per_node, args):
             args.rank = args.rank * ngpus_per_node + gpu  # compute global rank
 
         # set distributed group:
-        dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
-                                world_size=args.world_size, rank=args.rank)
+        dist.init_process_group(backend=args.dist_backend,
+                                init_method=args.dist_url,
+                                world_size=args.world_size,
+                                rank=args.rank)
 
     # SET save_path and logger
     save_path = os.path.join(args.save_dir, args.save_name)
     logger_level = "WARNING"
     tb_log = None
     if args.rank % ngpus_per_node == 0:
-        tb_log = TBLog(save_path, 'tensorboard', use_tensorboard=args.use_tensorboard)
+        tb_log = TBLog(save_path,
+                       'tensorboard',
+                       use_tensorboard=args.use_tensorboard)
         logger_level = "INFO"
 
     logger = get_logger(args.save_name, save_path, logger_level)
     logger.warning(f"Use GPU: {args.gpu} for training")
 
     ngpus_per_node = torch.cuda.device_count()  # number of gpus of each node
-    args.batch_size = int(args.batch_size / ngpus_per_node)  # batch_size: batch_size per node -> batch_size per gpu
+    args.batch_size = int(
+        args.batch_size / ngpus_per_node
+    )  # batch_size: batch_size per node -> batch_size per gpu
 
     _net_builder = get_net_builder(args.net, args.net_from_name)
     # optimizer, scheduler, datasets, dataloaders with be set in algorithms
@@ -252,10 +311,11 @@ def main_worker(gpu, ngpus_per_node, args):
         try:
             model.load_model(args.load_path)
         except:
-            logger.info("Fail to resume load path {}".format(args.load_path))    
+            logger.info("Fail to resume load path {}".format(args.load_path))
             args.resume = False
     else:
-        logger.info("Resume load path {} does not exist".format(args.load_path))
+        logger.info("Resume load path {} does not exist".format(
+            args.load_path))
 
     if hasattr(model, 'warmup'):
         logger.info(("Warmup stage"))
