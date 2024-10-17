@@ -5,6 +5,8 @@ import ruamel.yaml as yaml
 from torch.utils.tensorboard import SummaryWriter
 
 
+yaml = yaml.YAML(typ='rt')
+
 def over_write_args_from_dict(args, dict):
     """
     overwrite arguments acocrding to config file
@@ -20,7 +22,7 @@ def over_write_args_from_file(args, yml):
     if yml == '':
         return
     with open(yml, 'r', encoding='utf-8') as f:
-        dic = yaml.load(f.read(), Loader=yaml.Loader)
+        dic = yaml.load(f.read())
         for k in dic:
             setattr(args, k, dic[k])
 
