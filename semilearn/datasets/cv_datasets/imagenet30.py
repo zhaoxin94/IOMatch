@@ -10,7 +10,7 @@ from semilearn.datasets.augmentation import RandAugment, RandomResizedCropAndInt
 from .datasetbase import BasicDataset
 
 
-__all__ = ['pil_loader', 'IMG_EXTENSIONS']
+__all__ = ['pil_loader', 'IMG_EXTENSIONS', 'is_image_file', 'make_dataset', 'make_dataset_from_list', 'find_classes']
 
 mean, std = {}, {}
 mean['imagenet'] = [0.485, 0.456, 0.406]
