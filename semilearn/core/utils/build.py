@@ -77,7 +77,7 @@ def get_dataset(args,
         seed: random seed
         data_dir: data folder
     """
-    from semilearn.datasets import get_cifar_openset, get_imagenet30
+    from semilearn.datasets import get_cifar_openset, get_imagenet30, get_das6
     from semilearn.datasets import svhn_as_ood, lsun_as_ood, gaussian_as_ood, uniform_as_ood
     get_ood_funcs = {
         'svhn': svhn_as_ood,
@@ -99,6 +99,16 @@ def get_dataset(args,
             test_dset = {'full': eval_full_dset}
     elif dataset == 'imagenet30':
         lb_dset, ulb_dset, eval_dset, eval_full_dset = get_imagenet30(
+            args,
+            algorithm,
+            dataset,
+            args.labeled_percent,
+            num_classes,
+            data_dir=data_dir)
+        if eval_open:
+            test_dset = {'full': eval_full_dset}
+    elif dataset == 'das6':
+        lb_dset, ulb_dset, eval_dset, eval_full_dset = get_das6(
             args,
             algorithm,
             dataset,

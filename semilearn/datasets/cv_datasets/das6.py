@@ -62,7 +62,7 @@ def get_das6(args, alg, name, labeled_percent, num_classes, data_dir='./data'):
                            alg=alg,
                            strong_transform=transform_strong,
                            flist=os.path.join(
-                               data_dir, f'filelist/train_unlabeled_full.txt'))
+                               data_dir, f'filelist/train_unlabeled_{labeled_percent}.txt'))
 
     test_dset = DAS6Dataset(root=os.path.join(data_dir, "das6"),
                             transform=transform_val,
