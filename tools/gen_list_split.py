@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath("."))
 random.seed(2024)
 
 class_list = ['dig', 'knock', 'shake', 'background', 'water', 'walk']
-path = 'data/opendas_single_channel_image/train'
+path = 'data/das6/train'
 
 n_share = 3
 n_source_private = 0
@@ -23,7 +23,7 @@ print(target_list)
 print(len(target_list))
 
 labels = []
-with open('data/opendas_single_channel_image/filelist/opendas_train.txt', "r") as f:
+with open('data/das6/filelist/opendas_train.txt', "r") as f:
     for line in f.readlines():
         _, label = line.split()
         label = int(label)
@@ -60,10 +60,10 @@ print('有标签数据的长度:',len(labeled_idx))
 print('验证数据的长度', len(val_idx))
 print('无标签数据的长度', len(unlabeled_idx))
 
-with open('data/opendas_single_channel_image/filelist/opendas_train.txt', "r") as f0:
-    with open(f'data/opendas_single_channel_image/filelist/opendas_train_labeled_p{int(labeled_p*100)}.txt', "w") as f1:
-        with open('data/opendas_single_channel_image/filelist/opendas_val.txt', "w") as f2:
-            with open(f'data/opendas_single_channel_image/filelist/opendas_train_unlabeled_p{int(labeled_p*100)}.txt', "w") as f3:
+with open('data/das6/filelist/opendas_train.txt', "r") as f0:
+    with open(f'data/das6/filelist/opendas_train_labeled_p{int(labeled_p*100)}.txt', "w") as f1:
+        with open('data/das6/filelist/opendas_val.txt', "w") as f2:
+            with open(f'data/das6/filelist/opendas_train_unlabeled_p{int(labeled_p*100)}.txt', "w") as f3:
                 for i, line in enumerate(f0.readlines()):
                     path, label = line.split()
                     label = int(label)

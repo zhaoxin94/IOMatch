@@ -5,11 +5,10 @@ import sys
 
 sys.path.append(os.path.abspath("."))
 
-
 class_list = ['dig', 'knock', 'shake', 'background', 'water', 'walk']
-path = 'data/opendas_single_channel_image/train'
+path = 'data/das6/train'
 
-with open('data/opendas_single_channel_image/filelist/opendas_train.txt', "w") as f:
+with open('data/das6/filelist/opendas_train.txt', "w") as f:
     for i in range(len(class_list)):
         cla = class_list[i]
         print('class:', cla)
