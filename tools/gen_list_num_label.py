@@ -36,15 +36,13 @@ val_idx = []
 unlabeled_idx = []
 
 # percent of labeled and validation data
-labeled_p = 0.05
-val_p = 0.0
+label_per_class = 10
+val_per_class = 0
 
 for i in range(n_source):
     idx = np.where(labels == i)[0]
     num_class = len(idx)
     print(num_class)
-    label_per_class = int(labeled_p * num_class)
-    val_per_class = int(val_p * num_class)
     idx = np.random.choice(idx, label_per_class + val_per_class, False)
     labeled_idx.extend(idx[:label_per_class])
     val_idx.extend(idx[label_per_class:])
