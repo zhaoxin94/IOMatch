@@ -1,15 +1,15 @@
 algorithm: iomatch
 save_dir: ./saved_models/openset_cv
-save_name: iomatch_das6_p10_1
+save_name: iomatch_das6_p1_pretrain
 resume: True
-load_path: ./saved_models/openset_cv/iomatch_das6_p10_1/latest_model.pth
+load_path: ./saved_models/openset_cv/iomatch_das6_p1_pretrain/latest_model.pth
 overwrite: True
 use_tensorboard: True
 epoch: 100
-num_train_iter: 51200
-num_eval_iter: 512
+num_train_iter: 50000
+num_eval_iter: 500
 num_labels: 260
-labeled_percent: p10
+labeled_percent: p1
 batch_size: 32
 eval_batch_size: 128
 T: 0.5
@@ -22,11 +22,11 @@ ema_m: 0.999
 crop_ratio: 0.875
 img_size: 224
 optim: SGD
-lr: 0.03
+lr: 0.005
 momentum: 0.9
 weight_decay: 0.0003
 layer_decay: 1.0
-amp: False
+amp: True
 clip: 0.0
 use_cat: True
 net: resnet18
@@ -43,3 +43,5 @@ multiprocessing_distributed: False
 dist_url: tcp://127.0.0.1:10055
 dist_backend: nccl
 gpu: None
+use_pretrain: True
+

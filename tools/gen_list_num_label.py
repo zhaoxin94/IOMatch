@@ -36,7 +36,7 @@ val_idx = []
 unlabeled_idx = []
 
 # percent of labeled and validation data
-label_per_class = 10
+label_per_class = 5
 val_per_class = 0
 
 for i in range(n_source):
@@ -59,9 +59,9 @@ print('验证数据的长度', len(val_idx))
 print('无标签数据的长度', len(unlabeled_idx))
 
 with open('data/das6/filelist/train.txt', "r") as f0:
-    with open(f'data/das6/filelist/train_labeled_p{int(labeled_p*100)}.txt', "w") as f1:
+    with open(f'data/das6/filelist/train_labeled_{int(n_share*label_per_class)}.txt', "w") as f1:
         with open('data/das6/filelist/val.txt', "w") as f2:
-            with open(f'data/das6/filelist/train_unlabeled_p{int(labeled_p*100)}.txt', "w") as f3:
+            with open(f'data/das6/filelist/train_unlabeled_{int(n_share*label_per_class)}.txt', "w") as f3:
                 for i, line in enumerate(f0.readlines()):
                     path, label = line.split()
                     label = int(label)

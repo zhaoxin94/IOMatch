@@ -183,7 +183,9 @@ def get_data_loader(args,
                           pin_memory=pin_memory)
 
     if isinstance(data_sampler, str):
+        print(f'------use str sampler!')
         data_sampler = name2sampler[data_sampler]
+        print(f'-------{data_sampler}')
 
         if distributed:
             assert dist.is_available()
@@ -231,7 +233,8 @@ def get_optimizer(net,
                   weight_decay=0,
                   layer_decay=1.0,
                   nesterov=True,
-                  bn_wd_skip=True):
+                  bn_wd_skip=True,
+                  staged_lr=False):
     '''
     return optimizer (name) in torch.optim.
     If bn_wd_skip, the optimizer does not apply
@@ -243,16 +246,51 @@ def get_optimizer(net,
     if hasattr(net, 'no_weight_decay') and bn_wd_skip:
         no_decay = net.no_weight_decay()
 
-    if layer_decay != 1.0:
-        per_param_args = param_groups_layer_decay(
-            net,
-            lr,
-            weight_decay,
-            no_weight_decay_list=no_decay,
-            layer_decay=layer_decay)
+    new_layers = []
+
+    if not staged_lr:
+        print('Not use staged_lr!!!')
+        if layer_decay != 1.0:
+            per_param_args = param_groups_layer_decay(
+                net,
+                lr,
+                weight_decay,
+                no_weight_decay_list=no_decay,
+                layer_decay=layer_decay)
+        else:
+            per_param_args = param_groups_weight_decay(
+                net, weight_decay, no_weight_decay_list=no_decay)
     else:
-        per_param_args = param_groups_weight_decay(
-            net, weight_decay, no_weight_decay_list=no_decay)
+        print('Use staged_lr to better employ the imagenet pretrained model!')
+        new_layers = [
+            'mlp_proj',
+            'mb_classifiers',
+            'openset_classifier',
+            'rot_classifier',
+        ]
+        base_params = []
+        base_layers = []
+        new_params = []
+
+        for name, module in net.named_children():
+            if name in new_layers:
+                new_params += [p for p in module.parameters()]
+            else:
+                base_params += [p for p in module.parameters()]
+                base_layers.append(name)
+
+        print('new_layers:', new_layers)
+        print('base_layers:', base_layers)
+
+        per_param_args = [
+            {
+                "params": base_params,
+                "lr": lr * 0.1
+            },
+            {
+                "params": new_params
+            },
+        ]
 
     if optim_name == 'SGD':
         optimizer = torch.optim.SGD(per_param_args,

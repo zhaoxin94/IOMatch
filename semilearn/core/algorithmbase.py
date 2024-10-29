@@ -129,6 +129,8 @@ class AlgorithmBase:
             num_workers=self.args.num_workers,
             distributed=self.distributed)
 
+        print(f"-------dataloader label batch_size:{loader_dict['train_lb'].drop_last}")
+
         loader_dict['train_ulb'] = get_data_loader(
             self.args,
             self.dataset_dict['train_ulb'],
@@ -177,7 +179,7 @@ class AlgorithmBase:
         self.print_fn("Create optimizer and scheduler")
         optimizer = get_optimizer(self.model, self.args.optim, self.args.lr,
                                   self.args.momentum, self.args.weight_decay,
-                                  self.args.layer_decay)
+                                  self.args.layer_decay, staged_lr=self.args.staged_lr)
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
             self.num_train_iter,

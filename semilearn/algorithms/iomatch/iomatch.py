@@ -89,6 +89,8 @@ class IOMatch(AlgorithmBase):
         num_lb = y_lb.shape[0]
         num_ulb = x_ulb_w.shape[0]
 
+        # print(f'-----number of labeled data per batch:{num_lb}')
+
         # inference and calculate sup/unsup losses
         with self.amp_cm():
             if self.use_cat:
@@ -111,7 +113,7 @@ class IOMatch(AlgorithmBase):
                 x_ulb_r = torch.cat(
                     [torch.rot90(x_ulb_w[:num_lb], i, [2, 3]) for i in range(4)], dim=0)
                 y_ulb_r = torch.cat(
-                    [torch.empty(x_ulb_w[:num_lb].size(0)).fill_(i).long() for i in range(4)], dim=0).to(self.gpu)
+                    [torch.empty(x_ulb_w[:num_lb].size(0)).fill_(i).long() for i in range(4)], dim=0).cuda(self.gpu)
                 self.bn_controller.freeze_bn(self.model)
                 logits_rot = self.model(x_ulb_r)['logits_rot']
                 self.bn_controller.unfreeze_bn(self.model)
