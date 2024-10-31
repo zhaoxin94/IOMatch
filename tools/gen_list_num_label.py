@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath("."))
 
 random.seed(2024)
 
-class_list = ['dig', 'knock', 'shake', 'background', 'water', 'walk']
+class_list = ['dig', 'knock', 'shake', 'walk', 'background', 'water']
 path = 'data/das6/train'
 
 n_share = 3
@@ -36,7 +36,7 @@ val_idx = []
 unlabeled_idx = []
 
 # percent of labeled and validation data
-label_per_class = 5
+label_per_class = 24
 val_per_class = 0
 
 for i in range(n_source):
