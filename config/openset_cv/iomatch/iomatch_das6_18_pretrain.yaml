@@ -16,7 +16,7 @@ T: 0.5
 p_cutoff: 0.95
 q_cutoff: 0.5
 ulb_loss_ratio: 1.0
-uratio: 2
+uratio: 4
 da_len: 32
 ema_m: 0.999
 crop_ratio: 0.875
