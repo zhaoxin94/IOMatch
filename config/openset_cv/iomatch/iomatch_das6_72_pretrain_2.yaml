@@ -1,8 +1,8 @@
 algorithm: iomatch
 save_dir: ./saved_models/openset_cv
-save_name: iomatch_das6_72_pretrain
+save_name: iomatch_das6_72_pretrain_2
 resume: True
-load_path: ./saved_models/openset_cv/iomatch_das6_72_pretrain/latest_model.pth
+load_path: ./saved_models/openset_cv/iomatch_das6_72_pretrain_2/latest_model.pth
 overwrite: True
 use_tensorboard: True
 epoch: 150
@@ -16,7 +16,7 @@ T: 0.5
 p_cutoff: 0.95
 q_cutoff: 0.5
 ulb_loss_ratio: 1.0
-uratio: 3
+uratio: 4
 da_len: 32
 ema_m: 0.999
 crop_ratio: 0.875
