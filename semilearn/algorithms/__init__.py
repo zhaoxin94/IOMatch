@@ -1,12 +1,14 @@
 from .fixmatch import FixMatch
 from .openmatch import OpenMatch
 from .iomatch import IOMatch
+from .labelonly import LabelOnly
 
 # if any new alg., please append the dict
 name2alg = {
     "fixmatch": FixMatch,
     'openmatch': OpenMatch,
-    "iomatch": IOMatch
+    "iomatch": IOMatch,
+    "labelonly": LabelOnly
 }
 
 
