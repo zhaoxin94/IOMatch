@@ -42,4 +42,3 @@ class LabelOnly(AlgorithmBase):
         }
         return tb_dict
 
-

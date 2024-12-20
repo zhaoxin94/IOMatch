@@ -35,6 +35,7 @@ class AlgorithmBase:
 
         # common arguments
         self.tb_dict = None
+        self.eval_dict = {}
         self.args = args
         self.num_classes = args.num_classes
         self.ema_m = args.ema_m
@@ -67,6 +68,7 @@ class AlgorithmBase:
         self.epoch = 0
         self.it = 0
         self.best_eval_acc, self.best_it = 0.0, 0
+        self.best_results = {}
         self.bn_controller = Bn_Controller()
         self.net_builder = net_builder
         self.ema = None
@@ -104,7 +106,7 @@ class AlgorithmBase:
             torch.distributed.barrier()
         dataset_dict = get_dataset(self.args, self.algorithm,
                                    self.args.dataset, self.args.num_labels,
-                                   self.args.num_classes, self.args.data_dir)
+                                   self.args.num_classes, self.args.data_dir, eval_open=True)
         self.args.ulb_dest_len = len(
             dataset_dict['train_ulb']
         ) if dataset_dict['train_ulb'] is not None else 0
@@ -322,9 +324,9 @@ class AlgorithmBase:
         y_logits = np.concatenate(y_logits)
         top1 = accuracy_score(y_true, y_pred)
         # balanced_top1 = balanced_accuracy_score(y_true, y_pred)
-        # precision = precision_score(y_true, y_pred, average='macro')
-        # recall = recall_score(y_true, y_pred, average='macro')
-        # F1 = f1_score(y_true, y_pred, average='macro')
+        precision = precision_score(y_true, y_pred, average='macro')
+        recall = recall_score(y_true, y_pred, average='macro')
+        F1 = f1_score(y_true, y_pred, average='macro')
 
         if self.num_classes <= 10:
             cf_mat = confusion_matrix(y_true, y_pred, normalize='true')
@@ -332,14 +334,14 @@ class AlgorithmBase:
         self.ema.restore()
         self.model.train()
 
-        # eval_dict = {eval_dest + '/loss': total_loss / total_num, eval_dest + '/top-1-acc': top1,
-        #              eval_dest + '/balanced_acc': balanced_top1, eval_dest + '/precision': precision,
-        #              eval_dest + '/recall': recall, eval_dest + '/F1': F1}
+        eval_dict = {eval_dest + '/loss': total_loss / total_num, eval_dest + '/top-1-acc': top1,
+                     eval_dest + '/precision': precision,
+                     eval_dest + '/recall': recall, eval_dest + '/F1': F1}
 
-        eval_dict = {
-            eval_dest + '/loss': total_loss / total_num,
-            eval_dest + '/top-1-acc': top1
-        }
+        # eval_dict = {
+        #     eval_dest + '/loss': total_loss / total_num,
+        #     eval_dest + '/top-1-acc': top1
+        # }
 
         if return_logits:
             eval_dict[eval_dest + '/logits'] = y_logits

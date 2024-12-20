@@ -1,7 +1,8 @@
 import copy
 import numpy as np
 from PIL import Image
-from sklearn.metrics import accuracy_score, precision_score, recall_score
+from tqdm import tqdm
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -332,3 +333,94 @@ class OpenMatch(AlgorithmBase):
             SSL_Argument('--start_fix', int, 10),
             SSL_Argument('--fix_uratio', int, 7)
         ]
+
+    def evaluate_open(self):
+        """
+        open-set evaluation function 
+        """
+        self.model.eval()
+        self.ema.apply_shadow()
+
+        full_loader = self.loader_dict['test']['full']
+        total_num = 0.0
+        y_true_list = []
+        y_pred_closed_list = []
+        y_pred_ova_list = []
+        
+        results = {}
+
+        with torch.no_grad():
+            for data in full_loader:
+                x = data['x_lb']
+                y = data['y_lb']
+
+                if isinstance(x, dict):
+                    x = {k: v.cuda(self.gpu) for k, v in x.items()}
+                else:
+                    x = x.cuda(self.gpu)
+                y = y.cuda(self.gpu)
+
+                num_batch = y.shape[0]
+                total_num += num_batch
+
+                out = self.model(x)
+                logits, logits_open = out['logits'], out['logits_open']
+                pred_closed = logits.data.max(1)[1]
+
+                probs = F.softmax(logits, 1)
+                probs_open = F.softmax(
+                    logits_open.view(logits_open.size(0), 2, -1), 1)
+                tmp_range = torch.arange(0, logits_open.size(0)).long().cuda()
+                unk_score = probs_open[tmp_range, 0, pred_closed]
+                pred_open = pred_closed.clone()
+                pred_open[unk_score > 0.5] = self.num_classes
+
+                y_true_list.extend(y.cpu().tolist())
+                y_pred_closed_list.extend(pred_closed.cpu().tolist())
+                y_pred_ova_list.extend(pred_open.cpu().tolist())
+
+        y_true = np.array(y_true_list)
+
+        closed_mask = y_true < self.num_classes
+        open_mask = y_true >= self.num_classes
+        y_true[open_mask] = self.num_classes
+
+        y_pred_closed = np.array(y_pred_closed_list)
+        y_pred_ova = np.array(y_pred_ova_list)
+
+        # Closed Accuracy on Closed Test Data
+        y_true_closed = y_true[closed_mask]
+        y_pred_closed = y_pred_closed[closed_mask]
+        
+        closed_acc = accuracy_score(y_true_closed, y_pred_closed)
+        closed_precision = precision_score(y_true_closed,
+                                           y_pred_closed,
+                                           average='macro')
+        closed_recall = recall_score(y_true_closed,
+                                     y_pred_closed,
+                                     average='macro')
+        closed_F1 = f1_score(y_true_closed, y_pred_closed, average='macro')
+        closed_cfmat = confusion_matrix(y_true_closed,
+                                        y_pred_closed,
+                                        normalize='true')
+        
+        results['c_acc'] = closed_acc
+        results['c_precision'] = closed_precision
+        results['c_recall'] = closed_recall
+        results['c_f1'] = closed_F1
+        results['c_cfmat'] = closed_cfmat
+
+        # Open Accuracy on Full Test Data
+        open_acc = accuracy_score(y_true, y_pred_ova)
+        open_precision = precision_score(y_true, y_pred_ova, average='macro')
+        open_recall = recall_score(y_true, y_pred_ova, average='macro')
+        open_f1 = f1_score(y_true, y_pred_ova, average='macro')
+        open_cfmat = confusion_matrix(y_true, y_pred_ova, normalize='true')
+
+        results['o_acc'] = open_acc
+        results['o_precision'] = open_precision
+        results['o_recall'] = open_recall
+        results['o_f1'] = open_f1
+        results['o_cfmat'] = open_cfmat
+
+        return results
