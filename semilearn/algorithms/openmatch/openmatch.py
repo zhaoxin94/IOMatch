@@ -15,7 +15,7 @@ from semilearn.core.utils import get_data_loader
 from semilearn.algorithms.hooks import PseudoLabelingHook, FixedThresholdingHook
 from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool
 
-from .utils import ova_loss_func, em_loss_func, socr_loss_func
+from .utils import ova_loss_func, em_loss_func, socr_loss_func, compute_roc, h_score_compute
 
 
 def pil_loader(path):
@@ -346,7 +346,10 @@ class OpenMatch(AlgorithmBase):
         y_true_list = []
         y_pred_closed_list = []
         y_pred_ova_list = []
-        
+        unk_score_list = []
+
+        class_list = [i for i in range(self.num_classes+1)]
+        print(f"class_list: {class_list}")
         results = {}
 
         with torch.no_grad():
@@ -378,6 +381,7 @@ class OpenMatch(AlgorithmBase):
                 y_true_list.extend(y.cpu().tolist())
                 y_pred_closed_list.extend(pred_closed.cpu().tolist())
                 y_pred_ova_list.extend(pred_open.cpu().tolist())
+                unk_score_list.extend(unk_score.cpu().tolist())
 
         y_true = np.array(y_true_list)
 
@@ -387,11 +391,12 @@ class OpenMatch(AlgorithmBase):
 
         y_pred_closed = np.array(y_pred_closed_list)
         y_pred_ova = np.array(y_pred_ova_list)
+        unk_score_all = np.array(unk_score_list)
 
         # Closed Accuracy on Closed Test Data
         y_true_closed = y_true[closed_mask]
         y_pred_closed = y_pred_closed[closed_mask]
-        
+
         closed_acc = accuracy_score(y_true_closed, y_pred_closed)
         closed_precision = precision_score(y_true_closed,
                                            y_pred_closed,
@@ -403,7 +408,7 @@ class OpenMatch(AlgorithmBase):
         closed_cfmat = confusion_matrix(y_true_closed,
                                         y_pred_closed,
                                         normalize='true')
-        
+
         results['c_acc'] = closed_acc
         results['c_precision'] = closed_precision
         results['c_recall'] = closed_recall
@@ -416,11 +421,22 @@ class OpenMatch(AlgorithmBase):
         open_recall = recall_score(y_true, y_pred_ova, average='macro')
         open_f1 = f1_score(y_true, y_pred_ova, average='macro')
         open_cfmat = confusion_matrix(y_true, y_pred_ova, normalize='true')
+        auroc = compute_roc(unk_score_all,
+                            y_true,
+                            num_known=int(self.num_classes))
+        h_score, known_acc, unknown_acc = h_score_compute(y_true, y_pred_ova, class_list)
 
         results['o_acc'] = open_acc
         results['o_precision'] = open_precision
         results['o_recall'] = open_recall
         results['o_f1'] = open_f1
         results['o_cfmat'] = open_cfmat
+        results['o_auroc'] = auroc
+        results['o_hscore'] = h_score
+        results['o_knownacc'] = known_acc
+        results['o_unknownacc'] = unknown_acc
 
+        self.ema.restore()
+        self.model.train()
+        
         return results

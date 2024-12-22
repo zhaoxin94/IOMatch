@@ -265,7 +265,7 @@ def main_worker(gpu, ngpus_per_node, args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     cudnn.deterministic = True
-    cudnn.benchmark = True
+    cudnn.benchmark = False
 
     # SET UP FOR DISTRIBUTED TRAINING
     if args.distributed:
