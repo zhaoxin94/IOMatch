@@ -13,10 +13,9 @@ from semilearn.core.algorithmbase import AlgorithmBase
 from semilearn.datasets.cv_datasets.datasetbase import BasicDataset
 from semilearn.core.utils import get_data_loader
 from semilearn.algorithms.hooks import PseudoLabelingHook, FixedThresholdingHook
-from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool
+from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool, compute_roc, h_score_compute
 
-from .utils import ova_loss_func, em_loss_func, socr_loss_func, compute_roc, h_score_compute
-
+from .utils import ova_loss_func, em_loss_func, socr_loss_func
 
 def pil_loader(path):
     with open(path, 'rb') as f:
