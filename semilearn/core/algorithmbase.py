@@ -5,6 +5,7 @@ from inspect import signature
 from collections import OrderedDict
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, precision_score, recall_score, f1_score, \
     confusion_matrix
+from sklearn.metrics import roc_auc_score
 
 import torch
 import torch.nn.functional as F
@@ -14,6 +15,29 @@ from semilearn.core.hooks import Hook, get_priority, CheckpointHook, TimerHook, 
     ParamUpdateHook, EvaluationHook, EMAHook
 from semilearn.core.utils import get_dataset, get_data_loader, get_optimizer, get_cosine_schedule_with_warmup, \
     Bn_Controller
+
+
+def compute_roc(unk_all, label_all, num_known):
+    Y_test = np.zeros(unk_all.shape[0])
+    unk_pos = np.where(label_all >= num_known)[0]
+    Y_test[unk_pos] = 1
+    return roc_auc_score(Y_test, unk_all)
+
+
+def h_score_compute(label_all, pred_class, class_list):
+    per_class_num = np.zeros((len(class_list)))
+    per_class_correct = np.zeros((len(class_list))).astype(np.float32)
+    for i, t in enumerate(class_list):
+        t_ind = np.where(label_all == t)
+        correct_ind = np.where(pred_class[t_ind[0]] == t)
+        per_class_correct[i] += float(len(correct_ind[0]))
+        per_class_num[i] += float(len(t_ind[0]))
+    open_class = len(class_list)
+    per_class_acc = per_class_correct / per_class_num
+    known_acc = per_class_acc[:open_class - 1].mean()
+    unknown = per_class_acc[-1]
+    h_score = 2 * known_acc * unknown / (known_acc + unknown)
+    return h_score, known_acc, unknown
 
 
 class AlgorithmBase:
@@ -470,3 +494,111 @@ class AlgorithmBase:
         Get specificed arguments into argparse for each algorithm
         """
         return {}
+    
+    def evaluate_open(self):
+        """
+        open-set evaluation function 
+        """
+        self.model.eval()
+        self.ema.apply_shadow()
+
+        full_loader = self.loader_dict['test']['full']
+        total_num = 0.0
+        y_true_list = []
+        y_pred_closed_list = []
+        y_pred_open_list = []
+        unk_score_list = []
+
+        class_list = [i for i in range(self.num_classes + 1)]
+        print(f"class_list: {class_list}")
+        results = {}
+
+        with torch.no_grad():
+            for data in full_loader:
+                x = data['x_lb']
+                y = data['y_lb']
+
+                if isinstance(x, dict):
+                    x = {k: v.cuda(self.gpu) for k, v in x.items()}
+                else:
+                    x = x.cuda(self.gpu)
+                y = y.cuda(self.gpu)
+
+                num_batch = y.shape[0]
+                total_num += num_batch
+
+                logits = self.model(x)['logits']
+                pred_closed = logits.max(1)[1]
+                unk_score = 1.0 - logits.max(1)[0]
+
+                softmax_output = F.softmax(logits, dim=1)
+                unknown_output = torch.ones(softmax_output.size(0)).unsqueeze(1)
+                unknown_output = unknown_output * 0.8
+                unknown_output = unknown_output.cuda(self.gpu)
+                softmax_output = torch.cat((softmax_output, unknown_output),
+                                           dim=1)
+                pred_open = softmax_output.max(1)[1]
+
+                y_true_list.extend(y.cpu().tolist())
+                y_pred_closed_list.extend(pred_closed.cpu().tolist())
+                y_pred_open_list.extend(pred_open.cpu().tolist())
+                unk_score_list.extend(unk_score.cpu().tolist())
+
+        y_true = np.array(y_true_list)
+
+        closed_mask = y_true < self.num_classes
+        open_mask = y_true >= self.num_classes
+        y_true[open_mask] = self.num_classes
+
+        y_pred_closed = np.array(y_pred_closed_list)
+        y_pred_open = np.array(y_pred_open_list)
+        unk_score_all = np.array(unk_score_list)
+
+        # Closed Accuracy on Closed Test Data
+        y_true_closed = y_true[closed_mask]
+        y_pred_closed = y_pred_closed[closed_mask]
+
+        closed_acc = accuracy_score(y_true_closed, y_pred_closed)
+        closed_precision = precision_score(y_true_closed,
+                                           y_pred_closed,
+                                           average='macro')
+        closed_recall = recall_score(y_true_closed,
+                                     y_pred_closed,
+                                     average='macro')
+        closed_F1 = f1_score(y_true_closed, y_pred_closed, average='macro')
+        closed_cfmat = confusion_matrix(y_true_closed,
+                                        y_pred_closed,
+                                        normalize='true')
+
+        results['c_acc'] = closed_acc
+        results['c_precision'] = closed_precision
+        results['c_recall'] = closed_recall
+        results['c_f1'] = closed_F1
+        results['c_cfmat'] = closed_cfmat
+
+        # Open Accuracy on Full Test Data
+        open_acc = accuracy_score(y_true, y_pred_open)
+        open_precision = precision_score(y_true, y_pred_open, average='macro')
+        open_recall = recall_score(y_true, y_pred_open, average='macro')
+        open_f1 = f1_score(y_true, y_pred_open, average='macro')
+        open_cfmat = confusion_matrix(y_true, y_pred_open, normalize='true')
+        auroc = compute_roc(unk_score_all,
+                            y_true,
+                            num_known=int(self.num_classes))
+        h_score, known_acc, unknown_acc = h_score_compute(
+            y_true, y_pred_open, class_list)
+
+        results['o_acc'] = open_acc
+        results['o_precision'] = open_precision
+        results['o_recall'] = open_recall
+        results['o_f1'] = open_f1
+        results['o_cfmat'] = open_cfmat
+        results['o_auroc'] = auroc
+        results['o_hscore'] = h_score
+        results['o_knownacc'] = known_acc
+        results['o_unknownacc'] = unknown_acc
+
+        self.ema.restore()
+        self.model.train()
+
+        return results

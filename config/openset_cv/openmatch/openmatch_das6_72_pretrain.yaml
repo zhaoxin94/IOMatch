@@ -6,11 +6,11 @@ load_path: ./saved_models/openset_cv/openmatch_das6_72_pretrain/latest_model.pth
 overwrite: True
 use_tensorboard: True
 epoch: 100
-num_train_iter: 51200
-num_eval_iter: 512
+num_train_iter: 10000
+num_eval_iter: 100
 num_labels: 1250
 labeled_percent: 72
-batch_size: 16
+batch_size: 32
 eval_batch_size: 128
 p_cutoff: 0
 ulb_loss_ratio: 1.0

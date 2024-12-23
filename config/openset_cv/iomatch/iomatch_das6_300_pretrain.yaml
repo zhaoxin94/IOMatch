@@ -5,9 +5,9 @@ resume: True
 load_path: ./saved_models/openset_cv/iomatch_das6_300_pretrain/latest_model.pth
 overwrite: True
 use_tensorboard: True
-epoch: 150
-num_train_iter: 75000
-num_eval_iter: 500
+epoch: 100
+num_train_iter: 20000
+num_eval_iter: 200
 num_labels: 260
 labeled_percent: 300
 batch_size: 32
@@ -44,5 +44,5 @@ dist_url: tcp://127.0.0.1:10055
 dist_backend: nccl
 gpu: None
 use_pretrain: True
-use_rot: False
+use_rot: True
 staged_lr: False
