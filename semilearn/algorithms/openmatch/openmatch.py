@@ -17,6 +17,7 @@ from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, 
 
 from .utils import ova_loss_func, em_loss_func, socr_loss_func
 
+
 def pil_loader(path):
     with open(path, 'rb') as f:
         img = Image.open(f)
@@ -347,7 +348,7 @@ class OpenMatch(AlgorithmBase):
         y_pred_ova_list = []
         unk_score_list = []
 
-        class_list = [i for i in range(self.num_classes+1)]
+        class_list = [i for i in range(self.num_classes + 1)]
         print(f"class_list: {class_list}")
         results = {}
 
@@ -423,7 +424,8 @@ class OpenMatch(AlgorithmBase):
         auroc = compute_roc(unk_score_all,
                             y_true,
                             num_known=int(self.num_classes))
-        h_score, known_acc, unknown_acc = h_score_compute(y_true, y_pred_ova, class_list)
+        h_score, known_acc, unknown_acc = h_score_compute(
+            y_true, y_pred_ova, class_list)
 
         results['o_acc'] = open_acc
         results['o_precision'] = open_precision
@@ -437,5 +439,5 @@ class OpenMatch(AlgorithmBase):
 
         self.ema.restore()
         self.model.train()
-        
+
         return results

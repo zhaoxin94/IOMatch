@@ -44,8 +44,13 @@ class IOMatchNet(nn.Module):
         logits_open = self.openset_classifier(feat_proj)  # (k+1)-way logits
         logits_mb = self.mb_classifiers(feat_proj)  # shape: [bsz, 2K]
 
-        return_dict = {'feat': feat, 'feat_proj': feat_proj,
-                       'logits': logits, 'logits_open': logits_open, 'logits_mb': logits_mb}
+        return_dict = {
+            'feat': feat,
+            'feat_proj': feat_proj,
+            'logits': logits,
+            'logits_open': logits_open,
+            'logits_mb': logits_mb
+        }
         if self.use_rot:
             logits_rot = self.rot_classifier(feat)
             return_dict['logits_rot'] = logits_rot
@@ -70,21 +75,25 @@ class IOMatch(AlgorithmBase):
 
     def set_hooks(self):
         self.register_hook(
-            DistAlignQueueHook(num_classes=self.num_classes, queue_length=self.args.da_len, p_target_type='uniform'),
-            "DistAlignHook"
-        )
+            DistAlignQueueHook(num_classes=self.num_classes,
+                               queue_length=self.args.da_len,
+                               p_target_type='uniform'), "DistAlignHook")
         self.register_hook(PseudoLabelingHook(), "PseudoLabelingHook")
         self.register_hook(FixedThresholdingHook(), "MaskingHook")
         super().set_hooks()
 
     def set_model(self):
         model = super().set_model()  # backbone
-        model = IOMatchNet(model, num_classes=self.num_classes, use_rot=self.args.use_rot)
+        model = IOMatchNet(model,
+                           num_classes=self.num_classes,
+                           use_rot=self.args.use_rot)
         return model
 
     def set_ema_model(self):
         ema_model = self.net_builder(num_classes=self.num_classes)
-        ema_model = IOMatchNet(ema_model, num_classes=self.num_classes, use_rot=self.args.use_rot)
+        ema_model = IOMatchNet(ema_model,
+                               num_classes=self.num_classes,
+                               use_rot=self.args.use_rot)
         ema_model.load_state_dict(self.model.state_dict())
         return ema_model
 
@@ -101,8 +110,10 @@ class IOMatch(AlgorithmBase):
                 outputs = self.model(inputs)
                 logits_x_lb = outputs['logits'][:num_lb]
                 logits_mb_x_lb = outputs['logits_mb'][:num_lb]
-                logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
-                logits_open_x_ulb_w, logits_open_x_ulb_s = outputs['logits_open'][num_lb:].chunk(2)
+                logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][
+                    num_lb:].chunk(2)
+                logits_open_x_ulb_w, logits_open_x_ulb_s = outputs[
+                    'logits_open'][num_lb:].chunk(2)
                 logits_mb_x_ulb_w, _ = outputs['logits_mb'][num_lb:].chunk(2)
             else:
                 raise ValueError("Bad configuration: use_cat should be True!")
@@ -113,10 +124,15 @@ class IOMatch(AlgorithmBase):
             sup_loss = sup_closed_loss + sup_mb_loss
 
             if self.use_rot:
-                x_ulb_r = torch.cat(
-                    [torch.rot90(x_ulb_w[:num_lb], i, [2, 3]) for i in range(4)], dim=0)
-                y_ulb_r = torch.cat(
-                    [torch.empty(x_ulb_w[:num_lb].size(0)).fill_(i).long() for i in range(4)], dim=0).cuda(self.gpu)
+                x_ulb_r = torch.cat([
+                    torch.rot90(x_ulb_w[:num_lb], i, [2, 3]) for i in range(4)
+                ],
+                                    dim=0)
+                y_ulb_r = torch.cat([
+                    torch.empty(x_ulb_w[:num_lb].size(0)).fill_(i).long()
+                    for i in range(4)
+                ],
+                                    dim=0).cuda(self.gpu)
                 self.bn_controller.freeze_bn(self.model)
                 logits_rot = self.model(x_ulb_r)['logits_rot']
                 self.bn_controller.unfreeze_bn(self.model)
@@ -129,7 +145,9 @@ class IOMatch(AlgorithmBase):
                 p = F.softmax(logits_x_ulb_w, dim=-1)
                 targets_p = p.detach()
                 if self.dist_align:
-                    targets_p = self.call_hook("dist_align", "DistAlignHook", probs_x_ulb=targets_p)
+                    targets_p = self.call_hook("dist_align",
+                                               "DistAlignHook",
+                                               probs_x_ulb=targets_p)
                 logits_mb = logits_mb_x_ulb_w.view(num_ulb, 2, -1)
                 r = F.softmax(logits_mb, 1)
                 tmp_range = torch.arange(0, num_ulb).long().cuda(self.gpu)
@@ -143,13 +161,25 @@ class IOMatch(AlgorithmBase):
                 q[:, self.num_classes] = torch.sum(targets_p * o_neg, 1)
                 targets_q = q.detach()
 
-            p_mask = self.call_hook("masking", "MaskingHook", cutoff=self.p_cutoff,
-                                    logits_x_ulb=targets_p, softmax_x_ulb=False)
-            q_mask = self.call_hook("masking", "MaskingHook", cutoff=self.q_cutoff,
-                                    logits_x_ulb=targets_q, softmax_x_ulb=False)
+            p_mask = self.call_hook("masking",
+                                    "MaskingHook",
+                                    cutoff=self.p_cutoff,
+                                    logits_x_ulb=targets_p,
+                                    softmax_x_ulb=False)
+            q_mask = self.call_hook("masking",
+                                    "MaskingHook",
+                                    cutoff=self.q_cutoff,
+                                    logits_x_ulb=targets_q,
+                                    softmax_x_ulb=False)
 
-            ui_loss = consistency_loss(logits_x_ulb_s, targets_p, 'ce', mask=in_mask * p_mask)
-            op_loss = consistency_loss(logits_open_x_ulb_s, targets_q, 'ce', mask=q_mask)
+            ui_loss = consistency_loss(logits_x_ulb_s,
+                                       targets_p,
+                                       'ce',
+                                       mask=in_mask * p_mask)
+            op_loss = consistency_loss(logits_open_x_ulb_s,
+                                       targets_q,
+                                       'ce',
+                                       mask=q_mask)
 
             if self.epoch == 0:
                 op_loss *= 0.0
@@ -161,32 +191,36 @@ class IOMatch(AlgorithmBase):
 
         self.call_hook("param_update", "ParamUpdateHook", loss=total_loss)
 
-        tb_dict = {'train/s_loss': sup_closed_loss.item(),
-                   'train/mb_loss': sup_mb_loss.item(),
-                   'train/ui_loss': ui_loss.item(),
-                   'train/op_loss': op_loss.item(),
-                   'train/rot_loss': rot_loss.item(),
-                   'train/sup_loss': sup_loss.item(),
-                   'train/unsup_loss': unsup_loss.item(),
-                   'train/total_loss': total_loss.item(),
-                   'train/selected_ratio': (in_mask * p_mask).float().mean().item(),
-                   'train/in_mask_ratio': in_mask.float().mean().item(),
-                   'train/p_mask_ratio': p_mask.float().mean().item(),
-                   'train/q_mask_ratio': q_mask.float().mean().item()
-                   }
+        tb_dict = {
+            'train/s_loss': sup_closed_loss.item(),
+            'train/mb_loss': sup_mb_loss.item(),
+            'train/ui_loss': ui_loss.item(),
+            'train/op_loss': op_loss.item(),
+            'train/rot_loss': rot_loss.item(),
+            'train/sup_loss': sup_loss.item(),
+            'train/unsup_loss': unsup_loss.item(),
+            'train/total_loss': total_loss.item(),
+            'train/selected_ratio': (in_mask * p_mask).float().mean().item(),
+            'train/in_mask_ratio': in_mask.float().mean().item(),
+            'train/p_mask_ratio': p_mask.float().mean().item(),
+            'train/q_mask_ratio': q_mask.float().mean().item()
+        }
 
         return tb_dict
 
     def get_save_dict(self):
         save_dict = super().get_save_dict()
         save_dict['p_model'] = self.hooks_dict['DistAlignHook'].p_model.cpu()
-        save_dict['p_model_ptr'] = self.hooks_dict['DistAlignHook'].p_model_ptr.cpu()
+        save_dict['p_model_ptr'] = self.hooks_dict[
+            'DistAlignHook'].p_model_ptr.cpu()
         return save_dict
 
     def load_model(self, load_path):
         checkpoint = super().load_model(load_path)
-        self.hooks_dict['DistAlignHook'].p_model = checkpoint['p_model'].cuda(self.args.gpu)
-        self.hooks_dict['DistAlignHook'].p_model_ptr = checkpoint['p_model_ptr'].cuda(self.args.gpu)
+        self.hooks_dict['DistAlignHook'].p_model = checkpoint['p_model'].cuda(
+            self.args.gpu)
+        self.hooks_dict['DistAlignHook'].p_model_ptr = checkpoint[
+            'p_model_ptr'].cuda(self.args.gpu)
         return checkpoint
 
     @staticmethod
@@ -200,16 +234,16 @@ class IOMatch(AlgorithmBase):
             SSL_Argument('--mb_loss_ratio', float, 1.0),
             SSL_Argument('--op_loss_ratio', float, 1.0),
         ]
-    
+
     def evaluate_open(self):
         """
         open-set evaluation function 
         """
         self.model.eval()
-        self.ema.apply_shadow()
+        # self.ema.apply_shadow()
 
         full_loader = self.loader_dict['test']['full']
-        
+
         total_num = 0.0
         y_true_list = []
         p_list = []
@@ -217,10 +251,10 @@ class IOMatch(AlgorithmBase):
         pred_hat_q_list = []
         pred_q_list = []
         pred_hat_p_list = []
-        
+
         unk_score_list = []
 
-        class_list = [i for i in range(self.num_classes+1)]
+        class_list = [i for i in range(self.num_classes + 1)]
         print(f"class_list: {class_list}")
         results = {}
 
@@ -267,7 +301,8 @@ class IOMatch(AlgorithmBase):
                 pred_q_list.extend(pred_q.cpu().tolist())
 
                 # prediction hat_p of open-set classifier
-                hat_p = q[:, :self.num_classes] / q[:, :self.num_classes].sum(1).unsqueeze(1)
+                hat_p = q[:, :self.num_classes] / q[:, :self.num_classes].sum(
+                    1).unsqueeze(1)
                 pred_hat_p = hat_p.data.max(1)[1]
                 pred_hat_p_list.extend(pred_hat_p.cpu().tolist())
 
@@ -283,7 +318,7 @@ class IOMatch(AlgorithmBase):
         pred_hat_p = np.array(pred_hat_p_list)
         pred_q = np.array(pred_q_list)
         pred_hat_q = np.array(pred_hat_q_list)
-        
+
         unk_score_all = np.array(unk_score_list)
 
         # closed accuracy of p / hat_p on closed test data
@@ -318,7 +353,8 @@ class IOMatch(AlgorithmBase):
         auroc = compute_roc(unk_score_all,
                             y_true,
                             num_known=int(self.num_classes))
-        h_score, known_acc, unknown_acc = h_score_compute(y_true, y_pred_open, class_list)
+        h_score, known_acc, unknown_acc = h_score_compute(
+            y_true, y_pred_open, class_list)
 
         results['o_acc'] = open_acc
         results['o_precision'] = open_precision
@@ -329,9 +365,8 @@ class IOMatch(AlgorithmBase):
         results['o_hscore'] = h_score
         results['o_knownacc'] = known_acc
         results['o_unknownacc'] = unknown_acc
-       
 
-        self.ema.restore()
+        # self.ema.restore()
         self.model.train()
-        
+
         return results
