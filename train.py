@@ -203,7 +203,8 @@ def main(args):
     assert args.num_train_iter % args.epoch == 0, \
         f"# total training iter. {args.num_train_iter} is not divisible by # epochs {args.epoch}"
 
-    save_path = os.path.join(args.save_dir, args.save_name)
+    # save_path = os.path.join(args.save_dir, args.save_name)
+    save_path = args.save_dir
     if os.path.exists(save_path) and args.overwrite and args.resume == False:
         import shutil
         shutil.rmtree(save_path)
@@ -282,7 +283,8 @@ def main_worker(gpu, ngpus_per_node, args):
                                 rank=args.rank)
 
     # SET save_path and logger
-    save_path = os.path.join(args.save_dir, args.save_name)
+    # save_path = os.path.join(args.save_dir, args.save_name)
+    save_path = args.save_dir
     logger_level = "WARNING"
     tb_log = None
     if args.rank % ngpus_per_node == 0:
@@ -290,8 +292,10 @@ def main_worker(gpu, ngpus_per_node, args):
                        'tensorboard',
                        use_tensorboard=args.use_tensorboard)
         logger_level = "INFO"
-
-    logger = get_logger(args.save_name, save_path, logger_level)
+    
+    save_name = save_path.split('/')[-1]
+    print(f'==========={save_name}============')
+    logger = get_logger(save_name, save_path, logger_level)
     logger.warning(f"Use GPU: {args.gpu} for training")
 
     ngpus_per_node = torch.cuda.device_count()  # number of gpus of each node

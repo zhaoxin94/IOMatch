@@ -23,15 +23,6 @@ from .hook import Hook
 
 #     def after_run(self, algorithm):
 #         return
-#         # results_dict = {'eval/best_acc': algorithm.best_eval_acc, 'eval/best_it': algorithm.best_it}
-#         # if 'test' in algorithm.loader_dict:
-#         #     # load the best model and evaluate on test dataset
-#         #     best_model_path = os.path.join(algorithm.args.save_dir, algorithm.args.save_name, 'model_best.pth')
-#         #     algorithm.load_model(best_model_path)
-#         #     test_dict = algorithm.evaluate('test')
-#         #     results_dict['test/best_acc'] = test_dict['test/top-1-acc']
-#         # algorithm.results_dict = results_dict
-
 
 class EvaluationHook(Hook):
     def __init__(self) -> None:
@@ -54,11 +45,3 @@ class EvaluationHook(Hook):
 
     def after_run(self, algorithm):
         return
-        # results_dict = {'eval/best_acc': algorithm.best_eval_acc, 'eval/best_it': algorithm.best_it}
-        # if 'test' in algorithm.loader_dict:
-        #     # load the best model and evaluate on test dataset
-        #     best_model_path = os.path.join(algorithm.args.save_dir, algorithm.args.save_name, 'model_best.pth')
-        #     algorithm.load_model(best_model_path)
-        #     test_dict = algorithm.evaluate('test')
-        #     results_dict['test/best_acc'] = test_dict['test/top-1-acc']
-        # algorithm.results_dict = results_dict
