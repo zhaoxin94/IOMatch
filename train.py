@@ -293,7 +293,7 @@ def main_worker(gpu, ngpus_per_node, args):
                        use_tensorboard=args.use_tensorboard)
         logger_level = "INFO"
     
-    save_name = save_path.split('/')[-1]
+    save_name = save_path.split('/')[-2]
     print(f'==========={save_name}============')
     logger = get_logger(save_name, save_path, logger_level)
     logger.warning(f"Use GPU: {args.gpu} for training")

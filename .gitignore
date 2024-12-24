@@ -1,3 +1,4 @@
 *.pyc
 saved_models/
 data/
+output/

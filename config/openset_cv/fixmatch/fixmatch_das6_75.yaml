@@ -1,15 +1,12 @@
 algorithm: fixmatch
-save_dir: ./saved_models/openset_cv
-save_name: fixmatch_das6_72_pretrain
 resume: True
-load_path: ./saved_models/openset_cv/fixmatch_das6_72_pretrain/latest_model.pth
 overwrite: True
 use_tensorboard: True
-epoch: 100
-num_train_iter: 10000
-num_eval_iter: 100
+epoch: 200
+num_train_iter: 40000
+num_eval_iter: 200
 num_labels: 260
-labeled_percent: 72
+labeled_percent: 75
 batch_size: 32
 eval_batch_size: 128
 hard_label: True
@@ -28,7 +25,6 @@ layer_decay: 1.0
 amp: True
 clip: 0.0
 use_cat: True
-net: resnet18
 net_from_name: False
 data_dir: ./data
 dataset: das6
@@ -42,4 +38,3 @@ multiprocessing_distributed: False
 dist_url: tcp://127.0.0.1:10008
 dist_backend: nccl
 gpu: None
-use_pretrain: True

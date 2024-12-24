@@ -2,7 +2,19 @@ import os
 import os.path as osp
 import argparse
 
-from semilearn.algorithms.utils import str2bool
+
+def str2bool(v):
+    """
+    str to bool
+    """
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
 if __name__ == '__main__':
@@ -22,6 +34,7 @@ if __name__ == '__main__':
                         default="resnet18",
                         help="Backbone")
     parser.add_argument('--use_pretrain', default=True, type=str2bool)
+    parser.add_argument('--staged_lr', default=False, type=str2bool)
 
     args = parser.parse_args()
 
@@ -29,12 +42,15 @@ if __name__ == '__main__':
     exp_info = ''
     if args.use_pretrain:
         exp_info += '_pretrain'
+
+    if args.staged_lr:
+        exp_info += '_stagedlr'
     
     if args.exp_name:
         exp_info = exp_info + '_' + args.exp_name
 
     # base directory
-    base_dir = osp.join('output/das6', args.num_labels, args.method, 
+    base_dir = osp.join('output/das6', args.method, str(args.num_labels), 
                         args.backbone + exp_info)
    
     # multiple trials
@@ -54,5 +70,6 @@ if __name__ == '__main__':
             f'--use_pretrain {args.use_pretrain} '
             f'--save_dir {output_dir} '
             f'--load_path {load_path} '
-            f'--seed {args.seed} '
-            f'--c config/openset_cv/{args.method}/{args.method}_das6_{args.num_labels}_pretrain.yaml')
+            f'--seed {seed} '
+            f'--staged_lr {args.staged_lr} '
+            f'--c config/openset_cv/{args.method}/{args.method}_das6_{args.num_labels}.yaml')

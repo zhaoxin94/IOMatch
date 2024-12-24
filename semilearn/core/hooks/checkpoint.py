@@ -8,14 +8,14 @@ class CheckpointHook(Hook):
         super().__init__()
 
     def after_warmup_epoch(self, algorithm):
-        save_path = os.path.join(algorithm.save_dir, algorithm.save_name)
+        save_path = algorithm.save_dir
         if (not algorithm.distributed) or \
                 (algorithm.distributed and algorithm.rank % algorithm.ngpus_per_node == 0):
             algorithm.save_model('pretrained_model.pth', save_path)
 
     def after_train_step(self, algorithm):
         # must be called after evaluation for saving the best
-        save_path = os.path.join(algorithm.save_dir, algorithm.save_name)
+        save_path = algorithm.save_dir
 
         # if self.every_n_iters(algorithm, algorithm.num_eval_iter * 20) or algorithm.it == 1024:
         #     if (not algorithm.distributed) or \
