@@ -1,4 +1,5 @@
 import numpy as np
+from collections import deque
 
 import torch
 import torch.nn as nn
@@ -10,13 +11,29 @@ from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 
+class OODMemoryQueue:
+    def __init__(self, max_size):
+        self.queue = deque(maxlen=max_size)
+
+    def enqueue(self, samples):
+        self.queue.extend(samples)
+
+    def get_samples(self):
+        return list(self.queue)
+
+    def update_with_msp(self, logits, unlabeled_data, threshold=0.5):
+        probs = torch.softmax(logits, dim=1)[:, :-1]
+        msp_scores = probs.max(dim=1).values
+        ood_indices = (msp_scores < threshold).nonzero(as_tuple=True)[0]
+        ood_samples = [unlabeled_data[i] for i in ood_indices]
+        self.enqueue(ood_samples)
 
 class ScoMatch(AlgorithmBase):
     def __init__(self, args, net_builder, tb_log=None, logger=None):
         super().__init__(args, net_builder, tb_log, logger)
         # iomatch specified arguments
         self.use_rot = args.use_rot
-
+        self.ood_queue = OODMemoryQueue()
 
     def set_hooks(self):
         self.register_hook(PseudoLabelingHook(), "PseudoLabelingHook")
@@ -40,8 +57,6 @@ class ScoMatch(AlgorithmBase):
     def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s):
         num_lb = y_lb.shape[0]
         num_ulb = x_ulb_w.shape[0]
-
-        # print(f'-----number of labeled data per batch:{num_lb}')
 
         # inference and calculate sup/unsup losses
         with self.amp_cm():
