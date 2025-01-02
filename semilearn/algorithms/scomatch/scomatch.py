@@ -28,7 +28,8 @@ class OODMemoryQueue:
         - k: 要加入队列的样本数量 (int)
         """
         # 计算每个样本的 MSP（排除 OOD 类）
-        probs = torch.softmax(logits, dim=1)[:, :-1]  # [batch_size, num_classes-1]
+        probs = torch.softmax(logits,
+                              dim=1)[:, :-1]  # [batch_size, num_classes-1]
         msp_scores = probs.max(dim=1).values  # [batch_size]
 
         # 找出 MSP 最小的 K 个样本的索引
@@ -46,7 +47,10 @@ class OODMemoryQueue:
         """
         if len(self.queue) < num_samples:
             return []  # 如果队列中样本不足，返回空
-        return [self.queue[i] for i in torch.randint(0, len(self.queue), (num_samples,))]
+        return [
+            self.queue[i]
+            for i in torch.randint(0, len(self.queue), (num_samples, ))
+        ]
 
 
 class ScoMatch(AlgorithmBase):
@@ -57,6 +61,8 @@ class ScoMatch(AlgorithmBase):
         self.Km = 1
         self.Nm = 64
         self.ood_queue = OODMemoryQueue(self.Nm)
+        self.id_cutoff = 0.95
+        self.ood_cutoff_min = 0.75
 
     def set_hooks(self):
         self.register_hook(PseudoLabelingHook(), "PseudoLabelingHook")
@@ -64,7 +70,7 @@ class ScoMatch(AlgorithmBase):
         super().set_hooks()
 
     def set_model(self):
-        model = self.net_builder(num_classes=self.num_classes+1,
+        model = self.net_builder(num_classes=self.num_classes + 1,
                                  pretrained=self.args.use_pretrain,
                                  pretrained_path=self.args.pretrain_path)
         return model
@@ -73,7 +79,7 @@ class ScoMatch(AlgorithmBase):
         """
         initialize ema model from model
         """
-        ema_model = self.net_builder(num_classes=self.num_classes+1)
+        ema_model = self.net_builder(num_classes=self.num_classes + 1)
         ema_model.load_state_dict(self.model.state_dict())
         return ema_model
 
@@ -81,7 +87,6 @@ class ScoMatch(AlgorithmBase):
         num_lb = y_lb.shape[0]
         num_ulb = x_ulb_w.shape[0]
 
-        # inference and calculate sup/unsup losses
         with self.amp_cm():
             if self.use_cat:
                 inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
@@ -91,47 +96,87 @@ class ScoMatch(AlgorithmBase):
                     num_lb:].chunk(2)
             else:
                 raise NotImplementedError
-        
+
             # ########################
             # compute sup loss
             # ########################
-            sup_loss_id = ce_loss(logits_x_lb, y_lb, reduction='mean')
+            loss_sup_id = ce_loss(logits_x_lb, y_lb, reduction='mean')
             ood_samples = self.ood_queue.get_samples(num_lb)
             if ood_samples:
                 x_ood = torch.stack(ood_samples).cuda(self.gpu)
-                y_ood = torch.full((len(ood_samples),), self.num_classes, dtype=torch.long).cuda(self.gpu)
+                y_ood = torch.full((len(ood_samples), ),
+                                   self.num_classes,
+                                   dtype=torch.long).cuda(self.gpu)
                 logits_ood = self.model(x_ood)['logits']
-                sup_loss_ood = ce_loss(logits_ood, y_ood, reduction='mean')
+                loss_sup_ood = ce_loss(logits_ood, y_ood, reduction='mean')
             else:
-                sup_loss_ood = torch.tensor(0).to(self.gpu)
-
-            loss_sup = sup_loss_id + sup_loss_ood
+                loss_sup_ood = torch.tensor(0).to(self.gpu)
 
             # ########################
             # compute self-training loss
             # ########################
-            
-            
+            probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+            confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
 
+            # update dynamic threshold
+            id_selected = (pseudo_labels <
+                           self.num_classes) & (confidence > self.id_cutoff)
+            ood_selected = (pseudo_labels == self.num_classes) & (
+                confidence > self.id_cutoff)
+            num_id_selected = id_selected.sum().item()
+            num_ood_selected = ood_selected.sum().item()
+            ood_cutoff = (num_ood_selected / num_id_selected) * self.id_cutoff
+            ood_cutoff = max(self.ood_threshod_min, min(ood_cutoff, self.id_cutoff))
 
+            # generate mask
+            id_mask = (pseudo_labels < self.num_classes) & (confidence >
+                                                            self.id_cutoff)
+            ood_mask = (pseudo_labels == self.num_classes) & (confidence >
+                                                              ood_cutoff)
+            mask = id_mask | ood_mask
+
+            # open-set self-training
+            logits_x_ulb = torch.cat([logits_x_ulb_w, logits_x_ulb_s], dim=0)
+            pseudo_labels_all = pseudo_labels.reapeat(2)
+            mask_all = mask.repeat(2)
+
+            loss_u_open = consistency_loss(logits_x_ulb,
+                                           pseudo_labels_all,
+                                           'ce',
+                                           mask=mask_all)
+
+            # close-set self-training
+            logits_id_s = logits_x_ulb_s[:, :self.num_classes]
+            loss_u_close = consistency_loss(logits_id_s,
+                                            pseudo_labels,
+                                            'ce',
+                                            mask=id_mask)
+
+            loss_total = loss_sup_id + loss_sup_ood + loss_u_open + loss_u_close
 
             # update memory queue
             self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
 
-
-
+        self.call_hook("param_update", "ParamUpdateHook", loss=total_loss)
 
         tb_dict = {
-
+            'train/sup_id_loss': loss_sup_id.item(),
+            'train/sup_ood_loss': loss_sup_ood.item(),
+            'train/unsup_open_loss': loss_u_open.item(),
+            'train/unsup_close_loss': loss_u_close.item(),
+            'train/total_loss': loss_total.item(),
         }
 
         return tb_dict
-
 
     @staticmethod
     def get_argument():
         return [
             SSL_Argument('--use_rot', str2bool, False),
+            SSL_Argument('--Km', int, 1),
+            SSL_Argument('--Nm', int, 64),
+            SSL_Argument('--id_cutoff', float, 0.95),
+            SSL_Argument('--ood_cutoff_min', float, 0.75),
         ]
 
     def evaluate_open(self):
