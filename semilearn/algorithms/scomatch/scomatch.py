@@ -63,11 +63,7 @@ class ScoMatch(AlgorithmBase):
         self.ood_queue = OODMemoryQueue(self.Nm)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.75
-
-    def set_hooks(self):
-        self.register_hook(PseudoLabelingHook(), "PseudoLabelingHook")
-        self.register_hook(FixedThresholdingHook(), "MaskingHook")
-        super().set_hooks()
+        self.warm_epochs = 1
 
     def set_model(self):
         model = self.net_builder(num_classes=self.num_classes + 1,
@@ -84,88 +80,104 @@ class ScoMatch(AlgorithmBase):
         return ema_model
 
     def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s):
+        
         num_lb = y_lb.shape[0]
-        num_ulb = x_ulb_w.shape[0]
+        is_warmup = self.epoch < self.warm_epochs
 
         with self.amp_cm():
-            if self.use_cat:
+            if is_warmup:
+                inputs = x_lb
+                outputs = self.model(inputs)
+                logits_x_lb = outputs['logits']
+                loss_sup_id = F.cross_entropy(logits_x_lb, y_lb)
+                loss_total = loss_sup_id
+
+                # 日志记录
+                tb_dict = {
+                    'train/sup_id_loss': loss_sup_id.item(),
+                    'train/sup_ood_loss': 0,
+                    'train/unsup_open_loss': 0,
+                    'train/unsup_close_loss': 0,
+                    'train/total_loss': loss_total.item(),
+                }
+            else:
                 inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
                 outputs = self.model(inputs)
                 logits_x_lb = outputs['logits'][:num_lb]
                 logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][
                     num_lb:].chunk(2)
-            else:
-                raise NotImplementedError
+            
+                # ########################
+                # compute sup loss
+                # ########################
+                loss_sup_id = ce_loss(logits_x_lb, y_lb, reduction='mean')
+                ood_samples = self.ood_queue.get_samples(num_lb)
+                if len(ood_samples) > 0:
+                    x_ood = torch.stack(ood_samples).cuda(self.gpu)
+                    y_ood = torch.full((len(ood_samples), ),
+                                    self.num_classes,
+                                    dtype=torch.long).cuda(self.gpu)
+                    logits_ood = self.model(x_ood)['logits']
+                    loss_sup_ood = ce_loss(logits_ood, y_ood, reduction='mean')
+                else:
+                    loss_sup_ood = torch.tensor(0).to(self.gpu)
 
-            # ########################
-            # compute sup loss
-            # ########################
-            loss_sup_id = ce_loss(logits_x_lb, y_lb, reduction='mean')
-            ood_samples = self.ood_queue.get_samples(num_lb)
-            if ood_samples:
-                x_ood = torch.stack(ood_samples).cuda(self.gpu)
-                y_ood = torch.full((len(ood_samples), ),
-                                   self.num_classes,
-                                   dtype=torch.long).cuda(self.gpu)
-                logits_ood = self.model(x_ood)['logits']
-                loss_sup_ood = ce_loss(logits_ood, y_ood, reduction='mean')
-            else:
-                loss_sup_ood = torch.tensor(0).to(self.gpu)
+                # ########################
+                # compute self-training loss
+                # ########################
+                probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
 
-            # ########################
-            # compute self-training loss
-            # ########################
-            probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
-            confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                # update dynamic threshold
+                id_selected = (pseudo_labels <
+                            self.num_classes) & (confidence > self.id_cutoff)
+                ood_selected = (pseudo_labels == self.num_classes) & (
+                    confidence > self.id_cutoff)
+                num_id_selected = id_selected.sum().item()
+                num_ood_selected = ood_selected.sum().item()
 
-            # update dynamic threshold
-            id_selected = (pseudo_labels <
-                           self.num_classes) & (confidence > self.id_cutoff)
-            ood_selected = (pseudo_labels == self.num_classes) & (
-                confidence > self.id_cutoff)
-            num_id_selected = id_selected.sum().item()
-            num_ood_selected = ood_selected.sum().item()
-            ood_cutoff = (num_ood_selected / num_id_selected) * self.id_cutoff
-            ood_cutoff = max(self.ood_threshod_min, min(ood_cutoff, self.id_cutoff))
+                ood_cutoff = self.id_cutoff
+                if num_id_selected > 0:
+                    ood_cutoff = (num_ood_selected / num_id_selected) * self.id_cutoff
+                    ood_cutoff = max(self.ood_cutoff_min, min(ood_cutoff, self.id_cutoff))
 
-            # generate mask
-            id_mask = (pseudo_labels < self.num_classes) & (confidence >
-                                                            self.id_cutoff)
-            ood_mask = (pseudo_labels == self.num_classes) & (confidence >
-                                                              ood_cutoff)
-            mask = id_mask | ood_mask
+                # generate mask
+                id_mask = (pseudo_labels < self.num_classes) & (confidence >
+                                                                self.id_cutoff)
+                ood_mask = (pseudo_labels == self.num_classes) & (confidence >
+                                                                ood_cutoff)
+                mask = id_mask | ood_mask
 
-            # open-set self-training
-            logits_x_ulb = torch.cat([logits_x_ulb_w, logits_x_ulb_s], dim=0)
-            pseudo_labels_all = pseudo_labels.reapeat(2)
-            mask_all = mask.repeat(2)
+                # open-set self-training
+                logits_x_ulb = torch.cat([logits_x_ulb_w, logits_x_ulb_s], dim=0)
+                pseudo_labels_all = pseudo_labels.repeat(2)
+                mask_all = mask.repeat(2)
 
-            loss_u_open = consistency_loss(logits_x_ulb,
-                                           pseudo_labels_all,
-                                           'ce',
-                                           mask=mask_all)
-
-            # close-set self-training
-            logits_id_s = logits_x_ulb_s[:, :self.num_classes]
-            loss_u_close = consistency_loss(logits_id_s,
-                                            pseudo_labels,
+                loss_u_open = consistency_loss(logits_x_ulb,
+                                            pseudo_labels_all,
                                             'ce',
-                                            mask=id_mask)
+                                            mask=mask_all)
 
-            loss_total = loss_sup_id + loss_sup_ood + loss_u_open + loss_u_close
+                # close-set self-training
+                logits_id_s = logits_x_ulb_s[:, :self.num_classes]
+                loss_u_close = consistency_loss(logits_id_s,
+                                                pseudo_labels,
+                                                'ce',
+                                                mask=id_mask)
 
-            # update memory queue
-            self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
+                loss_total = loss_sup_id + loss_sup_ood + loss_u_open + loss_u_close
 
-        self.call_hook("param_update", "ParamUpdateHook", loss=total_loss)
+                tb_dict = {
+                    'train/sup_id_loss': loss_sup_id.item(),
+                    'train/sup_ood_loss': loss_sup_ood.item(),
+                    'train/unsup_open_loss': loss_u_open.item(),
+                    'train/unsup_close_loss': loss_u_close.item(),
+                    'train/total_loss': loss_total.item(),
+                }
 
-        tb_dict = {
-            'train/sup_id_loss': loss_sup_id.item(),
-            'train/sup_ood_loss': loss_sup_ood.item(),
-            'train/unsup_open_loss': loss_u_open.item(),
-            'train/unsup_close_loss': loss_u_close.item(),
-            'train/total_loss': loss_total.item(),
-        }
+        self.call_hook("param_update", "ParamUpdateHook", loss=loss_total)
+        # update memory queue
+        self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
 
         return tb_dict
 
@@ -173,12 +185,13 @@ class ScoMatch(AlgorithmBase):
     def get_argument():
         return [
             SSL_Argument('--use_rot', str2bool, False),
+            SSL_Argument('--warm_epochs', int, 1),
             SSL_Argument('--Km', int, 1),
             SSL_Argument('--Nm', int, 64),
             SSL_Argument('--id_cutoff', float, 0.95),
             SSL_Argument('--ood_cutoff_min', float, 0.75),
         ]
-
+    
     def evaluate_open(self):
         """
         open-set evaluation function 
@@ -187,15 +200,10 @@ class ScoMatch(AlgorithmBase):
         self.ema.apply_shadow()
 
         full_loader = self.loader_dict['test']['full']
-
         total_num = 0.0
         y_true_list = []
-        p_list = []
-        pred_p_list = []
-        pred_hat_q_list = []
-        pred_q_list = []
-        pred_hat_p_list = []
-
+        y_pred_closed_list = []
+        y_pred_open_list = []
         unk_score_list = []
 
         class_list = [i for i in range(self.num_classes + 1)]
@@ -213,61 +221,34 @@ class ScoMatch(AlgorithmBase):
                     x = x.cuda(self.gpu)
                 y = y.cuda(self.gpu)
 
-                y_true_list.extend(y.cpu().tolist())
-
                 num_batch = y.shape[0]
                 total_num += num_batch
 
-                outputs = self.model(x)
-                logits = outputs['logits']
-                logits_mb = outputs['logits_mb']
-                logits_open = outputs['logits_open']
+                logits = self.model(x)['logits']
+                pred_close = logits[:, :-1].max(1)[1]
+                pred_open = logits.max(1)[1]
 
-                # predictions p of closed-set classifier
-                p = F.softmax(logits, 1)
-                pred_p = p.data.max(1)[1]
-                pred_p_list.extend(pred_p.cpu().tolist())
+                softmax_output = F.softmax(logits, dim=1)
+                unk_score = softmax_output[:, -1]
 
-                # predictions hat_q from (closed-set + multi-binary) classifiers
-                r = F.softmax(logits_mb.view(logits_mb.size(0), 2, -1), 1)
-                tmp_range = torch.arange(0, logits_mb.size(0)).long().cuda()
-                hat_q = torch.zeros((num_batch, self.num_classes + 1)).cuda()
-                o_neg = r[tmp_range, 0, :]
-                o_pos = r[tmp_range, 1, :]
-                hat_q[:, :self.num_classes] = p * o_pos
-                hat_q[:, self.num_classes] = torch.sum(p * o_neg, 1)
-                pred_hat_q = hat_q.data.max(1)[1]
-                pred_hat_q_list.extend(pred_hat_q.cpu().tolist())
-
-                # predictions q of open-set classifier
-                q = F.softmax(logits_open, 1)
-                pred_q = q.data.max(1)[1]
-                pred_q_list.extend(pred_q.cpu().tolist())
-
-                # prediction hat_p of open-set classifier
-                hat_p = q[:, :self.num_classes] / q[:, :self.num_classes].sum(
-                    1).unsqueeze(1)
-                pred_hat_p = hat_p.data.max(1)[1]
-                pred_hat_p_list.extend(pred_hat_p.cpu().tolist())
-
-                unk_score = q[:, -1]
+                y_true_list.extend(y.cpu().tolist())
+                y_pred_closed_list.extend(pred_close.cpu().tolist())
+                y_pred_open_list.extend(pred_open.cpu().tolist())
                 unk_score_list.extend(unk_score.cpu().tolist())
 
         y_true = np.array(y_true_list)
+
         closed_mask = y_true < self.num_classes
         open_mask = y_true >= self.num_classes
         y_true[open_mask] = self.num_classes
 
-        pred_p = np.array(pred_p_list)
-        pred_hat_p = np.array(pred_hat_p_list)
-        pred_q = np.array(pred_q_list)
-        pred_hat_q = np.array(pred_hat_q_list)
-
+        y_pred_closed = np.array(y_pred_closed_list)
+        y_pred_open = np.array(y_pred_open_list)
         unk_score_all = np.array(unk_score_list)
 
-        # closed accuracy of p / hat_p on closed test data
+        # Closed Accuracy on Closed Test Data
         y_true_closed = y_true[closed_mask]
-        y_pred_closed = pred_p[closed_mask]
+        y_pred_closed = y_pred_closed[closed_mask]
 
         closed_acc = accuracy_score(y_true_closed, y_pred_closed)
         closed_precision = precision_score(y_true_closed,
@@ -287,8 +268,7 @@ class ScoMatch(AlgorithmBase):
         results['c_f1'] = closed_F1
         results['c_cfmat'] = closed_cfmat
 
-        # open accuracy of q / hat_q on full test data
-        y_pred_open = pred_q
+        # Open Accuracy on Full Test Data
         open_acc = accuracy_score(y_true, y_pred_open)
         open_precision = precision_score(y_true, y_pred_open, average='macro')
         open_recall = recall_score(y_true, y_pred_open, average='macro')
@@ -314,3 +294,5 @@ class ScoMatch(AlgorithmBase):
         self.model.train()
 
         return results
+
+

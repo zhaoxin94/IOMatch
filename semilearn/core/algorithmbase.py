@@ -285,6 +285,7 @@ class AlgorithmBase:
 
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
+            print(f"-------{self.epoch}----------")
 
             # prevent the training iterations exceed args.num_train_iter
             if self.it >= self.num_train_iter:
