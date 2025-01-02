@@ -13,27 +13,50 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 class OODMemoryQueue:
     def __init__(self, max_size):
+        """
+        OOD 样本队列，存储 MSP 最小的样本
+        """
         self.queue = deque(maxlen=max_size)
 
-    def enqueue(self, samples):
-        self.queue.extend(samples)
+    def enqueue(self, images, logits, k):
+        """
+        根据 MSP 选择最小的 K 个样本并加入队列
 
-    def get_samples(self):
-        return list(self.queue)
+        参数:
+        - images: 当前批次的图像样本 (torch.Tensor, shape: [batch_size, C, H, W])
+        - logits: 当前批次的 logits (torch.Tensor, shape: [batch_size, num_classes])
+        - k: 要加入队列的样本数量 (int)
+        """
+        # 计算每个样本的 MSP（排除 OOD 类）
+        probs = torch.softmax(logits, dim=1)[:, :-1]  # [batch_size, num_classes-1]
+        msp_scores = probs.max(dim=1).values  # [batch_size]
 
-    def update_with_msp(self, logits, unlabeled_data, threshold=0.5):
-        probs = torch.softmax(logits, dim=1)[:, :-1]
-        msp_scores = probs.max(dim=1).values
-        ood_indices = (msp_scores < threshold).nonzero(as_tuple=True)[0]
-        ood_samples = [unlabeled_data[i] for i in ood_indices]
-        self.enqueue(ood_samples)
+        # 找出 MSP 最小的 K 个样本的索引
+        _, smallest_indices = torch.topk(msp_scores, k=k, largest=False)
+
+        # 根据索引选择对应的样本
+        selected_images = images[smallest_indices]
+
+        # 将选中的样本加入队列
+        self.queue.extend(selected_images)
+
+    def get_samples(self, num_samples):
+        """
+        从队列中随机获取指定数量的样本
+        """
+        if len(self.queue) < num_samples:
+            return []  # 如果队列中样本不足，返回空
+        return [self.queue[i] for i in torch.randint(0, len(self.queue), (num_samples,))]
+
 
 class ScoMatch(AlgorithmBase):
     def __init__(self, args, net_builder, tb_log=None, logger=None):
         super().__init__(args, net_builder, tb_log, logger)
         # iomatch specified arguments
         self.use_rot = args.use_rot
-        self.ood_queue = OODMemoryQueue()
+        self.Km = 1
+        self.Nm = 64
+        self.ood_queue = OODMemoryQueue(self.Nm)
 
     def set_hooks(self):
         self.register_hook(PseudoLabelingHook(), "PseudoLabelingHook")
@@ -64,101 +87,42 @@ class ScoMatch(AlgorithmBase):
                 inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
                 outputs = self.model(inputs)
                 logits_x_lb = outputs['logits'][:num_lb]
-                logits_mb_x_lb = outputs['logits_mb'][:num_lb]
                 logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][
                     num_lb:].chunk(2)
-                logits_open_x_ulb_w, logits_open_x_ulb_s = outputs[
-                    'logits_open'][num_lb:].chunk(2)
-                logits_mb_x_ulb_w, _ = outputs['logits_mb'][num_lb:].chunk(2)
             else:
-                raise ValueError("Bad configuration: use_cat should be True!")
-
-            # supervised losses
-            sup_closed_loss = ce_loss(logits_x_lb, y_lb, reduction='mean')
-            sup_mb_loss = self.lambda_mb * mb_sup_loss(logits_mb_x_lb, y_lb)
-            sup_loss = sup_closed_loss + sup_mb_loss
-
-            if self.use_rot:
-                x_ulb_r = torch.cat([
-                    torch.rot90(x_ulb_w[:num_lb], i, [2, 3]) for i in range(4)
-                ],
-                                    dim=0)
-                y_ulb_r = torch.cat([
-                    torch.empty(x_ulb_w[:num_lb].size(0)).fill_(i).long()
-                    for i in range(4)
-                ],
-                                    dim=0).cuda(self.gpu)
-                self.bn_controller.freeze_bn(self.model)
-                logits_rot = self.model(x_ulb_r)['logits_rot']
-                self.bn_controller.unfreeze_bn(self.model)
-                rot_loss = ce_loss(logits_rot, y_ulb_r, reduction='mean')
+                raise NotImplementedError
+        
+            # ########################
+            # compute sup loss
+            # ########################
+            sup_loss_id = ce_loss(logits_x_lb, y_lb, reduction='mean')
+            ood_samples = self.ood_queue.get_samples(num_lb)
+            if ood_samples:
+                x_ood = torch.stack(ood_samples).cuda(self.gpu)
+                y_ood = torch.full((len(ood_samples),), self.num_classes, dtype=torch.long).cuda(self.gpu)
+                logits_ood = self.model(x_ood)['logits']
+                sup_loss_ood = ce_loss(logits_ood, y_ood, reduction='mean')
             else:
-                rot_loss = torch.tensor(0).to(self.gpu)
+                sup_loss_ood = torch.tensor(0).to(self.gpu)
 
-            # generator closed-set and open-set targets (pseudo-labels)
-            with torch.no_grad():
-                p = F.softmax(logits_x_ulb_w, dim=-1)
-                targets_p = p.detach()
-                if self.dist_align:
-                    targets_p = self.call_hook("dist_align",
-                                               "DistAlignHook",
-                                               probs_x_ulb=targets_p)
-                logits_mb = logits_mb_x_ulb_w.view(num_ulb, 2, -1)
-                r = F.softmax(logits_mb, 1)
-                tmp_range = torch.arange(0, num_ulb).long().cuda(self.gpu)
-                out_scores = torch.sum(targets_p * r[tmp_range, 0, :], 1)
-                in_mask = (out_scores < 0.5)
+            loss_sup = sup_loss_id + sup_loss_ood
 
-                o_neg = r[tmp_range, 0, :]
-                o_pos = r[tmp_range, 1, :]
-                q = torch.zeros((num_ulb, self.num_classes + 1)).cuda(self.gpu)
-                q[:, :self.num_classes] = targets_p * o_pos
-                q[:, self.num_classes] = torch.sum(targets_p * o_neg, 1)
-                targets_q = q.detach()
+            # ########################
+            # compute self-training loss
+            # ########################
+            
+            
 
-            p_mask = self.call_hook("masking",
-                                    "MaskingHook",
-                                    cutoff=self.p_cutoff,
-                                    logits_x_ulb=targets_p,
-                                    softmax_x_ulb=False)
-            q_mask = self.call_hook("masking",
-                                    "MaskingHook",
-                                    cutoff=self.q_cutoff,
-                                    logits_x_ulb=targets_q,
-                                    softmax_x_ulb=False)
 
-            ui_loss = consistency_loss(logits_x_ulb_s,
-                                       targets_p,
-                                       'ce',
-                                       mask=in_mask * p_mask)
-            op_loss = consistency_loss(logits_open_x_ulb_s,
-                                       targets_q,
-                                       'ce',
-                                       mask=q_mask)
 
-            if self.epoch == 0:
-                op_loss *= 0.0
+            # update memory queue
+            self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
 
-            unsup_loss = self.lambda_u * ui_loss
-            op_loss = self.lambda_op * op_loss
 
-            total_loss = sup_loss + unsup_loss + op_loss + rot_loss
 
-        self.call_hook("param_update", "ParamUpdateHook", loss=total_loss)
 
         tb_dict = {
-            'train/s_loss': sup_closed_loss.item(),
-            'train/mb_loss': sup_mb_loss.item(),
-            'train/ui_loss': ui_loss.item(),
-            'train/op_loss': op_loss.item(),
-            'train/rot_loss': rot_loss.item(),
-            'train/sup_loss': sup_loss.item(),
-            'train/unsup_loss': unsup_loss.item(),
-            'train/total_loss': total_loss.item(),
-            'train/selected_ratio': (in_mask * p_mask).float().mean().item(),
-            'train/in_mask_ratio': in_mask.float().mean().item(),
-            'train/p_mask_ratio': p_mask.float().mean().item(),
-            'train/q_mask_ratio': q_mask.float().mean().item()
+
         }
 
         return tb_dict
