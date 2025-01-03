@@ -62,8 +62,8 @@ class ScoMatch(AlgorithmBase):
         self.Nm = 64
         self.ood_queue = OODMemoryQueue(self.Nm)
         self.id_cutoff = 0.95
-        self.ood_cutoff_min = 0.75
-        self.warm_epochs = 1
+        self.ood_cutoff_min = 0.8
+        self.warm_epochs = 5
 
     def set_model(self):
         model = self.net_builder(num_classes=self.num_classes + 1,
@@ -84,11 +84,17 @@ class ScoMatch(AlgorithmBase):
         num_lb = y_lb.shape[0]
         is_warmup = self.epoch < self.warm_epochs
 
+        inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
+        outputs = self.model(inputs)
+        logits_x_lb = outputs['logits'][:num_lb]
+        logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][
+            num_lb:].chunk(2)
+        
+        # update memory queue
+        self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
+
         with self.amp_cm():
             if is_warmup:
-                inputs = x_lb
-                outputs = self.model(inputs)
-                logits_x_lb = outputs['logits']
                 loss_sup_id = F.cross_entropy(logits_x_lb, y_lb)
                 loss_total = loss_sup_id
 
@@ -101,12 +107,6 @@ class ScoMatch(AlgorithmBase):
                     'train/total_loss': loss_total.item(),
                 }
             else:
-                inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
-                outputs = self.model(inputs)
-                logits_x_lb = outputs['logits'][:num_lb]
-                logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][
-                    num_lb:].chunk(2)
-            
                 # ########################
                 # compute sup loss
                 # ########################
@@ -125,8 +125,12 @@ class ScoMatch(AlgorithmBase):
                 # ########################
                 # compute self-training loss
                 # ########################
-                probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
-                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                # probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+                # confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                with torch.no_grad():
+                    logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
+                    probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
+                    confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
 
                 # update dynamic threshold
                 id_selected = (pseudo_labels <
@@ -159,11 +163,12 @@ class ScoMatch(AlgorithmBase):
                                             mask=mask_all)
 
                 # close-set self-training
-                logits_id_s = logits_x_ulb_s[:, :self.num_classes]
-                loss_u_close = consistency_loss(logits_id_s,
-                                                pseudo_labels,
-                                                'ce',
-                                                mask=id_mask)
+                logits_id_s = logits_x_ulb_s[:, :self.num_classes][id_mask]
+                pseudo_labels_id = pseudo_labels[id_mask]
+                if logits_id_s.size(0) > 0:
+                    loss_u_close = F.cross_entropy(logits_id_s, pseudo_labels_id, reduction="mean")
+                else:
+                    loss_u_close = torch.tensor(0.0).to(self.gpu)
 
                 loss_total = loss_sup_id + loss_sup_ood + loss_u_open + loss_u_close
 
@@ -173,11 +178,12 @@ class ScoMatch(AlgorithmBase):
                     'train/unsup_open_loss': loss_u_open.item(),
                     'train/unsup_close_loss': loss_u_close.item(),
                     'train/total_loss': loss_total.item(),
+                    'train/id_mask_ratio': id_mask.float().mean().item(),
+                    'train/ood_mask_ratio': ood_mask.float().mean().item(),
+                    'train/mask_ratio': mask.float().mean().item()
                 }
 
         self.call_hook("param_update", "ParamUpdateHook", loss=loss_total)
-        # update memory queue
-        self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
 
         return tb_dict
 
