@@ -80,16 +80,15 @@ class ScoMatch(AlgorithmBase):
         return ema_model
 
     def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s):
-        
+
         num_lb = y_lb.shape[0]
         is_warmup = self.epoch < self.warm_epochs
 
         inputs = torch.cat((x_lb, x_ulb_w, x_ulb_s))
         outputs = self.model(inputs)
         logits_x_lb = outputs['logits'][:num_lb]
-        logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][
-            num_lb:].chunk(2)
-        
+        logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
+
         # update memory queue
         self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
 
@@ -115,8 +114,8 @@ class ScoMatch(AlgorithmBase):
                 if len(ood_samples) > 0:
                     x_ood = torch.stack(ood_samples).cuda(self.gpu)
                     y_ood = torch.full((len(ood_samples), ),
-                                    self.num_classes,
-                                    dtype=torch.long).cuda(self.gpu)
+                                       self.num_classes,
+                                       dtype=torch.long).cuda(self.gpu)
                     logits_ood = self.model(x_ood)['logits']
                     loss_sup_ood = ce_loss(logits_ood, y_ood, reduction='mean')
                 else:
@@ -125,16 +124,16 @@ class ScoMatch(AlgorithmBase):
                 # ########################
                 # compute self-training loss
                 # ########################
-                # probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
-                # confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
-                with torch.no_grad():
-                    logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
-                    probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
-                    confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                # with torch.no_grad():
+                #     logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
+                #     probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
+                #     confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
 
                 # update dynamic threshold
-                id_selected = (pseudo_labels <
-                            self.num_classes) & (confidence > self.id_cutoff)
+                id_selected = (pseudo_labels < self.num_classes) & (
+                    confidence > self.id_cutoff)
                 ood_selected = (pseudo_labels == self.num_classes) & (
                     confidence > self.id_cutoff)
                 num_id_selected = id_selected.sum().item()
@@ -142,31 +141,40 @@ class ScoMatch(AlgorithmBase):
 
                 ood_cutoff = self.id_cutoff
                 if num_id_selected > 0:
-                    ood_cutoff = (num_ood_selected / num_id_selected) * self.id_cutoff
-                    ood_cutoff = max(self.ood_cutoff_min, min(ood_cutoff, self.id_cutoff))
+                    ood_cutoff = (num_ood_selected /
+                                  num_id_selected) * self.id_cutoff
+                    ood_cutoff = max(self.ood_cutoff_min,
+                                     min(ood_cutoff, self.id_cutoff))
 
                 # generate mask
                 id_mask = (pseudo_labels < self.num_classes) & (confidence >
                                                                 self.id_cutoff)
                 ood_mask = (pseudo_labels == self.num_classes) & (confidence >
-                                                                ood_cutoff)
+                                                                  ood_cutoff)
                 mask = id_mask | ood_mask
 
                 # open-set self-training
-                logits_x_ulb = torch.cat([logits_x_ulb_w, logits_x_ulb_s], dim=0)
+                logits_x_ulb = torch.cat([logits_x_ulb_w, logits_x_ulb_s],
+                                         dim=0)
                 pseudo_labels_all = pseudo_labels.repeat(2)
                 mask_all = mask.repeat(2)
 
+                # logits_x_ulb = logits_x_ulb_w
+                # pseudo_labels_all = pseudo_labels
+                # mask_all = mask
+
                 loss_u_open = consistency_loss(logits_x_ulb,
-                                            pseudo_labels_all,
-                                            'ce',
-                                            mask=mask_all)
+                                               pseudo_labels_all,
+                                               'ce',
+                                               mask=mask_all)
 
                 # close-set self-training
-                logits_id_s = logits_x_ulb_s[:, :self.num_classes][id_mask]
+                logits_id = logits_x_ulb_s[:, :self.num_classes][id_mask]
                 pseudo_labels_id = pseudo_labels[id_mask]
-                if logits_id_s.size(0) > 0:
-                    loss_u_close = F.cross_entropy(logits_id_s, pseudo_labels_id, reduction="mean")
+                if logits_id.size(0) > 0:
+                    loss_u_close = F.cross_entropy(logits_id,
+                                                   pseudo_labels_id,
+                                                   reduction="mean")
                 else:
                     loss_u_close = torch.tensor(0.0).to(self.gpu)
 
@@ -197,7 +205,7 @@ class ScoMatch(AlgorithmBase):
             SSL_Argument('--id_cutoff', float, 0.95),
             SSL_Argument('--ood_cutoff_min', float, 0.75),
         ]
-    
+
     def evaluate_open(self):
         """
         open-set evaluation function 
@@ -300,5 +308,3 @@ class ScoMatch(AlgorithmBase):
         self.model.train()
 
         return results
-
-

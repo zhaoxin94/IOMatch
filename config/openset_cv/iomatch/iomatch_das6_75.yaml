@@ -38,4 +38,4 @@ multiprocessing_distributed: False
 dist_url: tcp://127.0.0.1:10055
 dist_backend: nccl
 gpu: None
-use_rot: True
+use_rot: False
