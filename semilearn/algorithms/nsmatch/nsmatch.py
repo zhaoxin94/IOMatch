@@ -59,7 +59,25 @@ class OODMemoryQueue:
             for i in torch.randint(0, len(self.queue), (num_samples, ))
         ]
 
-class ScoMatch(AlgorithmBase):
+
+class Bank:
+    def __init__(self, num_unlabled, feat_dim, num_classes):
+        self.feat_bank = torch.randn(num_unlabled, feat_dim)
+        self.score_bank = torch.randn(num_unlabled,
+                                      num_classes + 1).to(self.device)
+    
+    def update(self, feat, score, index):
+        self.feat_bank[index] = feat.detach().clone().cpu()
+        self.score_bank[index] = score.detach().clone()
+
+    def get_feat(self):
+        return self.feat_bank
+    
+    def get_score(self):
+        return self.score_bank
+
+
+class NSMatch(AlgorithmBase):
     def __init__(self, args, net_builder, tb_log=None, logger=None):
         super().__init__(args, net_builder, tb_log, logger)
         # iomatch specified arguments
@@ -71,6 +89,7 @@ class ScoMatch(AlgorithmBase):
         self.id_cutoff = 0.98
         self.ood_cutoff_min = 0.8
         self.warm_epochs = 5
+        self.bank = Bank()
 
     def set_model(self):
         model = self.net_builder(num_classes=self.num_classes + 1,
@@ -85,6 +104,45 @@ class ScoMatch(AlgorithmBase):
         ema_model = self.net_builder(num_classes=self.num_classes + 1)
         ema_model.load_state_dict(self.model.state_dict())
         return ema_model
+
+    def train(self):
+        """
+        train function
+        """
+        self.model.train()
+        self.call_hook("before_run")
+
+        for epoch in range(self.epoch, self.epochs):
+            self.epoch = epoch
+            print(f"-------{self.epoch}----------")
+
+            # prevent the training iterations exceed args.num_train_iter
+            if self.it >= self.num_train_iter:
+                break
+
+            self.call_hook("before_train_epoch")
+
+            for data_lb, data_ulb in zip(self.loader_dict['train_lb'],
+                                         self.loader_dict['train_ulb']):
+                # prevent the training iterations exceed args.num_train_iter
+                if self.it >= self.num_train_iter:
+                    break
+
+                self.call_hook("before_train_step")
+                self.tb_dict = self.train_step(
+                    **self.process_batch(**data_lb, **data_ulb))
+                self.call_hook("after_train_step")
+                self.it += 1
+
+            self.call_hook("after_train_epoch")
+
+        self.call_hook("after_run")
+    
+    def build_memory(self):
+        self.model.eval()
+        with torch.no_grad():
+            pass
+
 
     def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s):
 

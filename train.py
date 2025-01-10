@@ -178,7 +178,7 @@ def get_config():
     parser.add_argument('--c', type=str, default='')
 
     # zhaoxin add
-    parser.add_argument('--staged_lr', type=bool, default=False)
+    parser.add_argument('--staged_lr', type=str2bool, default=False)
 
     # add algorithm specific parameters
     args = parser.parse_args()
