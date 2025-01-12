@@ -9,6 +9,13 @@ from semilearn.core.algorithmbase import AlgorithmBase
 from semilearn.algorithms.hooks import DistAlignQueueHook, PseudoLabelingHook, FixedThresholdingHook
 from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool, compute_roc, h_score_compute
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.mixture import GaussianMixture
+
+CE = nn.CrossEntropyLoss(reduction='none')
+
+
+def entropy(p, axis=1):
+    return -torch.sum(p * torch.log2(p + 1e-5), dim=axis)
 
 
 class OODMemoryQueue:
@@ -19,7 +26,7 @@ class OODMemoryQueue:
         self.queue = deque(maxlen=max_size)
         self.score_type = score_type
 
-    def enqueue(self, images, logits, k):
+    def enqueue(self, images, w_known, k):
         """
         根据 MSP 选择最小的 K 个样本并加入队列
 
@@ -29,18 +36,7 @@ class OODMemoryQueue:
         - k: 要加入队列的样本数量 (int)
         """
         # 计算每个样本的 MSP（排除 OOD 类）
-        probs = torch.softmax(logits,
-                              dim=1)[:, :-1]  # [batch_size, num_classes-1]
-
-        if self.score_type == 'msp':
-            msp_scores = probs.max(dim=1).values  # [batch_size]
-            # 找出 MSP 最小的 K 个样本的索引
-            _, smallest_indices = torch.topk(msp_scores, k=k, largest=False)
-        elif self.score_type == 'energy':
-            enery_scores = -torch.logsumexp(logits[:, :-1], dim=1)
-            _, smallest_indices = torch.topk(enery_scores, k=k, largest=True)
-        else:
-            raise NotImplementedError
+        _, smallest_indices = torch.topk(w_known, k=k, largest=False)
 
         # 根据索引选择对应的样本
         selected_images = images[smallest_indices]
@@ -60,7 +56,7 @@ class OODMemoryQueue:
         ]
 
 
-class ScoMatch(AlgorithmBase):
+class PSMatch(AlgorithmBase):
     def __init__(self, args, net_builder, tb_log=None, logger=None):
         super().__init__(args, net_builder, tb_log, logger)
         # iomatch specified arguments
@@ -71,7 +67,7 @@ class ScoMatch(AlgorithmBase):
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.75
-        self.warm_epochs = 10
+        self.warm_epochs = 5
 
     def set_model(self):
         model = self.net_builder(num_classes=self.num_classes + 1,
@@ -87,7 +83,107 @@ class ScoMatch(AlgorithmBase):
         ema_model.load_state_dict(self.model.state_dict())
         return ema_model
 
-    def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s):
+    def train(self):
+        """
+        train function
+        """
+        self.model.train()
+        self.call_hook("before_run")
+
+        for epoch in range(self.epoch, self.epochs):
+            self.epoch = epoch
+            print(f"-------{self.epoch}----------")
+
+            # prevent the training iterations exceed args.num_train_iter
+            if self.it >= self.num_train_iter:
+                break
+
+            self.call_hook("before_train_epoch")
+
+            prob, score = self.run_separation()
+            w_known = torch.from_numpy(prob)
+            self.w_known = w_known.view(-1, 1).cuda(self.gpu)
+
+            for data_lb, data_ulb in zip(self.loader_dict['train_lb'],
+                                         self.loader_dict['train_ulb']):
+                # prevent the training iterations exceed args.num_train_iter
+                if self.it >= self.num_train_iter:
+                    break
+
+                self.call_hook("before_train_step")
+                self.tb_dict = self.train_step(
+                    **self.process_batch(**data_lb, **data_ulb))
+                self.call_hook("after_train_step")
+                self.it += 1
+
+            self.call_hook("after_train_epoch")
+
+        self.call_hook("after_run")
+
+    def run_separation(self):
+        self.model.eval()
+        all_score = []
+        all_index = []
+
+        with torch.no_grad():
+            for batch in self.loader_dict['train_ulb']:
+                x_ulb_w = batch['x_ulb_w']
+                idx_ulb = batch['idx_ulb']
+
+                outputs = self.model(x_ulb_w)
+                logits = outputs['logits']
+                outputs = F.softmax(logits, dim=1)
+
+                if self.score_type == 'msp':
+                    score = outputs[:, :-1].max(1)[0]
+                elif self.score_type == 'ent':
+                    score = torch.sum(-outputs[:, :-1] * torch.log(outputs[:, :-1]), dim=1)
+                elif self.score_type == 'energy':
+                    score = -torch.logsumexp(logits[:, :-1], dim=1)
+                else:
+                    raise NotImplementedError
+                
+                all_score.append(score)
+                all_index.append(idx_ulb)
+            
+        all_score = torch.cat(all_score, dim=0)
+        all_score = (all_score - all_score.min()) / (all_score.max() -
+                                                     all_score.min())
+        all_score = all_score.cpu()
+
+        all_index = torch.cat(all_index, dim=0)
+
+        # fit a two-component GMM to the entropy
+        input_score = all_score.reshape(-1, 1)
+        gmm = GaussianMixture(n_components=2,
+                              max_iter=10,
+                              tol=1e-2,
+                              reg_covar=5e-4)
+
+        gmm.fit(input_score)
+        prob = gmm.predict_proba(input_score)
+        if self.score_type in ['ent', 'energy']:
+            prob = prob[:, gmm.means_.argmin()]
+        elif self.score_type in ['msp', 'mls']:
+            prob = prob[:, gmm.means_.argmax()]
+        else:
+            raise NotImplementedError
+        
+        # 将 all_index 转换为 NumPy 数组
+        all_index = all_index.cpu().numpy()
+        all_score = all_score.numpy()
+        prob = prob.flatten()  # 确保 prob 是一维的
+
+        # 按索引排序
+        sorted_indices = all_index.argsort()  # 获取排序的索引
+        prob_sorted = prob[sorted_indices]  # 按索引排序
+        score_sorted = all_score[sorted_indices]  # 同样按索引排序
+
+        self.model.train()
+
+        return prob_sorted, score_sorted
+
+    def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s, idx_ulb):
 
         num_lb = y_lb.shape[0]
         is_warmup = self.epoch < self.warm_epochs
@@ -97,8 +193,10 @@ class ScoMatch(AlgorithmBase):
         logits_x_lb = outputs['logits'][:num_lb]
         logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
 
+        w_known = self.w_known[idx_ulb]
+
         # update memory queue
-        self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
+        self.ood_queue.enqueue(x_ulb_w, w_known, self.Km)
 
         with self.amp_cm():
             if is_warmup:
@@ -211,17 +309,6 @@ class ScoMatch(AlgorithmBase):
         self.call_hook("param_update", "ParamUpdateHook", loss=loss_total)
 
         return tb_dict
-
-    @staticmethod
-    def get_argument():
-        return [
-            SSL_Argument('--use_rot', str2bool, False),
-            SSL_Argument('--warm_epochs', int, 1),
-            SSL_Argument('--Km', int, 1),
-            SSL_Argument('--Nm', int, 64),
-            SSL_Argument('--id_cutoff', float, 0.95),
-            SSL_Argument('--ood_cutoff_min', float, 0.75),
-        ]
 
     def evaluate_open(self):
         """

@@ -10,6 +10,12 @@ from semilearn.algorithms.hooks import DistAlignQueueHook, PseudoLabelingHook, F
 from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool, compute_roc, h_score_compute
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
+CE = nn.CrossEntropyLoss(reduction='none')
+
+
+def entropy(p, axis=1):
+    return -torch.sum(p * torch.log2(p + 1e-5), dim=axis)
+
 
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
@@ -61,18 +67,17 @@ class OODMemoryQueue:
 
 
 class Bank:
-    def __init__(self, num_unlabled, feat_dim, num_classes):
+    def __init__(self, num_unlabled, feat_dim, num_classes, gpu):
         self.feat_bank = torch.randn(num_unlabled, feat_dim)
-        self.score_bank = torch.randn(num_unlabled,
-                                      num_classes + 1).to(self.device)
-    
+        self.score_bank = torch.randn(num_unlabled, num_classes + 1).cuda(gpu)
+
     def update(self, feat, score, index):
         self.feat_bank[index] = feat.detach().clone().cpu()
         self.score_bank[index] = score.detach().clone()
 
     def get_feat(self):
         return self.feat_bank
-    
+
     def get_score(self):
         return self.score_bank
 
@@ -83,13 +88,17 @@ class NSMatch(AlgorithmBase):
         # iomatch specified arguments
         self.score_type = 'energy'
         self.use_rot = args.use_rot
+        self.K = 10
         self.Km = 1
         self.Nm = 32
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
-        self.id_cutoff = 0.98
+        self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.8
         self.warm_epochs = 5
-        self.bank = Bank()
+        self.bank = Bank(num_unlabled=self.args.ulb_dest_len,
+                         feat_dim=512,
+                         num_classes=self.num_classes,
+                         gpu=self.gpu)
 
     def set_model(self):
         model = self.net_builder(num_classes=self.num_classes + 1,
@@ -111,6 +120,9 @@ class NSMatch(AlgorithmBase):
         """
         self.model.train()
         self.call_hook("before_run")
+
+        print('------building bank---------')
+        self.build_memory()
 
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
@@ -137,14 +149,25 @@ class NSMatch(AlgorithmBase):
             self.call_hook("after_train_epoch")
 
         self.call_hook("after_run")
-    
+
     def build_memory(self):
         self.model.eval()
         with torch.no_grad():
-            pass
+            for batch in self.loader_dict['train_ulb']:
+                x_ulb_w = batch['x_ulb_w']
+                idx_ulb = batch['idx_ulb']
 
+                outputs = self.model(x_ulb_w)
+                feat = outputs['feat']
+                logits = outputs['logits']
 
-    def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s):
+                score = F.softmax(logits, dim=1)
+                feat_norm = F.normalize(feat)
+
+                self.bank.update(feat_norm, score, idx_ulb)
+        self.model.train()
+
+    def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s, y_ulb, idx_ulb):
 
         num_lb = y_lb.shape[0]
         is_warmup = self.epoch < self.warm_epochs
@@ -153,6 +176,12 @@ class NSMatch(AlgorithmBase):
         outputs = self.model(inputs)
         logits_x_lb = outputs['logits'][:num_lb]
         logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
+
+        feat_x_ulb_w, _ = outputs['feat'][num_lb:].chunk(2)
+        feat_norm = F.normalize(feat_x_ulb_w)
+        probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+
+        self.bank.update(feat_norm, probs_x_ulb_w, idx_ulb)
 
         # update memory queue
         self.ood_queue.enqueue(x_ulb_w, logits_x_ulb_w, self.Km)
@@ -196,57 +225,65 @@ class NSMatch(AlgorithmBase):
                 # ########################
                 # compute self-training loss
                 # ########################
-                probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
-                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+
                 # with torch.no_grad():
                 #     logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
                 #     probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
-                #     confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
 
-                # update dynamic threshold
-                id_selected = (pseudo_labels < self.num_classes) & (
-                    confidence > self.id_cutoff)
-                ood_selected = (pseudo_labels == self.num_classes) & (
-                    confidence > self.id_cutoff)
-                num_id_selected = id_selected.sum().item()
-                num_ood_selected = ood_selected.sum().item()
+                old_confidence, old_pseudo_labels = probs_x_ulb_w.max(dim=1)
+                old_acc = (old_pseudo_labels == y_ulb
+                           ).sum().item() / y_ulb.size(0)  # 返回正确预测的数量
 
-                ood_cutoff = self.id_cutoff
-                if num_id_selected > 0:
-                    ood_cutoff = (num_ood_selected /
-                                  num_id_selected) * self.id_cutoff
-                    ood_cutoff = max(self.ood_cutoff_min,
-                                     min(ood_cutoff, self.id_cutoff))
+                # neighborhood correction
+                with torch.no_grad():
+                    feat_bank = self.bank.get_feat()
+                    score_bank = self.bank.get_score()
+
+                    feat_norm = feat_norm.cpu().detach().clone()
+                    distance = feat_norm @ feat_bank.T
+                    _, idx_near = torch.topk(distance,
+                                             dim=-1,
+                                             largest=True,
+                                             k=self.K + 1)
+                    idx_near = idx_near[:, 1:]  # batch x K
+                    score_near = score_bank[idx_near]  # batch X K X C
+
+                    probs_mean = score_near.mean(dim=1)
+                    pseudo_labels = probs_mean.max(dim=1)[1]
+
+                    new_acc = (pseudo_labels == y_ulb
+                               ).sum().item() / y_ulb.size(0)  # 返回正确预测的数量
+                    
+                    self.print_fn(f"old_acc:{old_acc}, new_acc:{new_acc}")
+
+                    #CE weights
+                    max_entropy = torch.log2(torch.tensor(self.num_classes))
+                    w = entropy(probs_mean)
+
+                    w = w / max_entropy
+                    w = torch.exp(-w)
+
+                    self.print_fn(w)
 
                 # generate mask
-                id_mask = (pseudo_labels < self.num_classes) & (confidence >
-                                                                self.id_cutoff)
-                ood_mask = (pseudo_labels == self.num_classes) & (confidence >
-                                                                  ood_cutoff)
-                mask = id_mask | ood_mask
+                id_mask = (pseudo_labels < self.num_classes)
 
                 # open-set self-training
                 logits_x_ulb = torch.cat([logits_x_ulb_w, logits_x_ulb_s],
                                          dim=0)
                 pseudo_labels_all = pseudo_labels.repeat(2)
-                mask_all = mask.repeat(2)
+                w_all = w.repeat(2)
 
-                # logits_x_ulb = logits_x_ulb_w
-                # pseudo_labels_all = pseudo_labels
-                # mask_all = mask
-
-                loss_u_open = consistency_loss(logits_x_ulb,
-                                               pseudo_labels_all,
-                                               'ce',
-                                               mask=mask_all)
+                loss_u_open = (w_all *
+                               CE(logits_x_ulb, pseudo_labels_all)).mean()
 
                 # close-set self-training
                 logits_id = logits_x_ulb_s[:, :self.num_classes][id_mask]
                 pseudo_labels_id = pseudo_labels[id_mask]
+                w_id = w[id_mask]
                 if logits_id.size(0) > 0:
-                    loss_u_close = F.cross_entropy(logits_id,
-                                                   pseudo_labels_id,
-                                                   reduction="mean")
+                    loss_u_close = (w_id *
+                                    CE(logits_id, pseudo_labels_id)).mean()
                 else:
                     loss_u_close = torch.tensor(0.0).to(self.gpu)
 
@@ -257,26 +294,23 @@ class NSMatch(AlgorithmBase):
                     'train/sup_ood_loss': loss_sup_ood.item(),
                     'train/unsup_open_loss': loss_u_open.item(),
                     'train/unsup_close_loss': loss_u_close.item(),
-                    'train/total_loss': loss_total.item(),
-                    'train/id_mask_ratio': id_mask.float().mean().item(),
-                    'train/ood_mask_ratio': ood_mask.float().mean().item(),
-                    'train/mask_ratio': mask.float().mean().item()
+                    'train/total_loss': loss_total.item()
                 }
 
         self.call_hook("param_update", "ParamUpdateHook", loss=loss_total)
 
         return tb_dict
 
-    @staticmethod
-    def get_argument():
-        return [
-            SSL_Argument('--use_rot', str2bool, False),
-            SSL_Argument('--warm_epochs', int, 1),
-            SSL_Argument('--Km', int, 1),
-            SSL_Argument('--Nm', int, 64),
-            SSL_Argument('--id_cutoff', float, 0.95),
-            SSL_Argument('--ood_cutoff_min', float, 0.75),
-        ]
+    # @staticmethod
+    # def get_argument():
+    #     return [
+    #         SSL_Argument('--use_rot', str2bool, False),
+    #         SSL_Argument('--warm_epochs', int, 1),
+    #         SSL_Argument('--Km', int, 1),
+    #         SSL_Argument('--Nm', int, 64),
+    #         SSL_Argument('--id_cutoff', float, 0.95),
+    #         SSL_Argument('--ood_cutoff_min', float, 0.75),
+    #     ]
 
     def evaluate_open(self):
         """

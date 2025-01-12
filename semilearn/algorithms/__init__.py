@@ -3,6 +3,8 @@ from .openmatch import OpenMatch
 from .iomatch import IOMatch
 from .labelonly import LabelOnly
 from .scomatch import ScoMatch
+from .nsmatch import NSMatch
+from .psmatch import PSMatch
 
 # if any new alg., please append the dict
 name2alg = {
@@ -10,18 +12,18 @@ name2alg = {
     'openmatch': OpenMatch,
     "iomatch": IOMatch,
     "labelonly": LabelOnly,
-    "scomatch": ScoMatch
+    "scomatch": ScoMatch,
+    "nsmatch": NSMatch,
+    "psmatch": PSMatch
 }
 
 
 def get_algorithm(args, net_builder, tb_log, logger):
     try:
-        alg = name2alg[args.algorithm](
-            args=args,
-            net_builder=net_builder,
-            tb_log=tb_log,
-            logger=logger
-        )
+        alg = name2alg[args.algorithm](args=args,
+                                       net_builder=net_builder,
+                                       tb_log=tb_log,
+                                       logger=logger)
         return alg
     except KeyError as e:
         print(f'Unknown algorithm: {str(e)}')
