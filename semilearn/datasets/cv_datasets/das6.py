@@ -56,13 +56,23 @@ def get_das6(args, alg, name, labeled_percent, num_classes, data_dir='./data'):
                               data_dir,
                               f'filelist/train_labeled_{labeled_percent}.txt'))
 
-    ulb_dset = DAS6Dataset(root=os.path.join(data_dir, "das6"),
-                           transform=transform_weak,
-                           is_ulb=True,
-                           alg=alg,
-                           strong_transform=transform_strong,
-                           flist=os.path.join(
-                               data_dir, f'filelist/train_unlabeled_{labeled_percent}.txt'))
+    ulb_dset = DAS6Dataset(
+        root=os.path.join(data_dir, "das6"),
+        transform=transform_weak,
+        is_ulb=True,
+        alg=alg,
+        strong_transform=transform_strong,
+        flist=os.path.join(data_dir,
+                           f'filelist/train_unlabeled_{labeled_percent}.txt'))
+
+    ulb_eval_dset = DAS6Dataset(
+        root=os.path.join(data_dir, "das6"),
+        transform=transform_val,
+        is_ulb=True,
+        alg=alg,
+        strong_transform=transform_strong,
+        flist=os.path.join(data_dir,
+                           f'filelist/train_unlabeled_{labeled_percent}.txt'))
 
     test_dset = DAS6Dataset(root=os.path.join(data_dir, "das6"),
                             transform=transform_val,
@@ -78,7 +88,7 @@ def get_das6(args, alg, name, labeled_percent, num_classes, data_dir='./data'):
     eval_dset.data, eval_dset.targets = eval_dset.data[
         seen_indices], eval_dset.targets[seen_indices]
 
-    return lb_dset, ulb_dset, eval_dset, test_dset
+    return lb_dset, ulb_dset, eval_dset, test_dset, ulb_eval_dset
 
 
 class DAS6Dataset(BasicDataset):

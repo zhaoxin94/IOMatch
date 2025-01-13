@@ -1,4 +1,4 @@
-algorithm: psmatch
+algorithm: scomatch
 resume: True
 overwrite: True
 use_tensorboard: True
@@ -6,7 +6,7 @@ epoch: 100
 num_train_iter: 20000
 num_eval_iter: 200
 num_labels: 260
-labeled_percent: 45
+labeled_percent: 300
 batch_size: 32
 eval_batch_size: 128
 T: 0.5
@@ -19,7 +19,6 @@ ema_m: 0.999
 crop_ratio: 0.875
 img_size: 224
 optim: SGD
-lr: 0.01
 momentum: 0.9
 weight_decay: 0.0003
 layer_decay: 1.0

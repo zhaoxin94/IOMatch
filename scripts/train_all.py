@@ -35,24 +35,25 @@ if __name__ == '__main__':
                         help="Backbone")
     parser.add_argument('--use_pretrain', default=True, type=str2bool)
     parser.add_argument('--staged_lr', default=False, type=str2bool)
+    parser.add_argument('--lr', default=0.01, type=float)
 
     args = parser.parse_args()
 
     # experiment name
-    exp_info = ''
+    exp_info = '_' + str(args.lr)
     if args.use_pretrain:
         exp_info += '_pretrain'
 
     if args.staged_lr:
         exp_info += '_stagedlr'
-    
+
     if args.exp_name:
         exp_info = exp_info + '_' + args.exp_name
 
     # base directory
-    base_dir = osp.join('output/das6', args.method, str(args.num_labels), 
+    base_dir = osp.join('output/das6', args.method, str(args.num_labels),
                         args.backbone + exp_info)
-   
+
     # multiple trials
     for i in range(args.n_trials):
         # path setting
@@ -70,6 +71,8 @@ if __name__ == '__main__':
             f'--use_pretrain {args.use_pretrain} '
             f'--save_dir {output_dir} '
             f'--load_path {load_path} '
+            f'--lr {args.lr} '
             f'--seed {seed} '
             f'--staged_lr {args.staged_lr} '
-            f'--c config/openset_cv/{args.method}/{args.method}_das6_{args.num_labels}.yaml')
+            f'--c config/openset_cv/{args.method}/{args.method}_das6_{args.num_labels}.yaml'
+        )

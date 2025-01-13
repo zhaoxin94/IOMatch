@@ -11,12 +11,8 @@ from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from sklearn.mixture import GaussianMixture
 
+
 CE = nn.CrossEntropyLoss(reduction='none')
-
-
-def entropy(p, axis=1):
-    return -torch.sum(p * torch.log2(p + 1e-5), dim=axis)
-
 
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
@@ -26,20 +22,14 @@ class OODMemoryQueue:
         self.queue = deque(maxlen=max_size)
         self.score_type = score_type
 
-    def enqueue(self, images, w_known, k):
-        """
-        根据 MSP 选择最小的 K 个样本并加入队列
+    def enqueue(self, images, w_unknown, k):
 
-        参数:
-        - images: 当前批次的图像样本 (torch.Tensor, shape: [batch_size, C, H, W])
-        - logits: 当前批次的 logits (torch.Tensor, shape: [batch_size, num_classes])
-        - k: 要加入队列的样本数量 (int)
-        """
-        # 计算每个样本的 MSP（排除 OOD 类）
-        _, smallest_indices = torch.topk(w_known, k=k, largest=False)
+        w_unknown = w_unknown.flatten()
+
+        _, indices = torch.topk(w_unknown, k=k, largest=True)
 
         # 根据索引选择对应的样本
-        selected_images = images[smallest_indices]
+        selected_images = images[indices]
 
         # 将选中的样本加入队列
         self.queue.extend(selected_images)
@@ -92,7 +82,7 @@ class PSMatch(AlgorithmBase):
 
         for epoch in range(self.epoch, self.epochs):
             self.epoch = epoch
-            print(f"-------{self.epoch}----------")
+            self.print_fn(f"-------{self.epoch}----------")
 
             # prevent the training iterations exceed args.num_train_iter
             if self.it >= self.num_train_iter:
@@ -100,9 +90,9 @@ class PSMatch(AlgorithmBase):
 
             self.call_hook("before_train_epoch")
 
-            prob, score = self.run_separation()
-            w_known = torch.from_numpy(prob)
-            self.w_known = w_known.view(-1, 1).cuda(self.gpu)
+            prob, _ = self.run_separation()
+            w_unknown = torch.from_numpy(prob)
+            self.w_unknown = w_unknown.view(-1, 1).cuda(self.gpu)
 
             for data_lb, data_ulb in zip(self.loader_dict['train_lb'],
                                          self.loader_dict['train_ulb']):
@@ -126,7 +116,7 @@ class PSMatch(AlgorithmBase):
         all_index = []
 
         with torch.no_grad():
-            for batch in self.loader_dict['train_ulb']:
+            for batch in self.loader_dict['ulb_eval']:
                 x_ulb_w = batch['x_ulb_w']
                 idx_ulb = batch['idx_ulb']
 
@@ -136,8 +126,6 @@ class PSMatch(AlgorithmBase):
 
                 if self.score_type == 'msp':
                     score = outputs[:, :-1].max(1)[0]
-                elif self.score_type == 'ent':
-                    score = torch.sum(-outputs[:, :-1] * torch.log(outputs[:, :-1]), dim=1)
                 elif self.score_type == 'energy':
                     score = -torch.logsumexp(logits[:, :-1], dim=1)
                 else:
@@ -153,6 +141,10 @@ class PSMatch(AlgorithmBase):
 
         all_index = torch.cat(all_index, dim=0)
 
+        print(all_index)
+
+        assert len(all_index) == self.args.ulb_dest_len, "wrong dataset length"
+
         # fit a two-component GMM to the entropy
         input_score = all_score.reshape(-1, 1)
         gmm = GaussianMixture(n_components=2,
@@ -163,25 +155,16 @@ class PSMatch(AlgorithmBase):
         gmm.fit(input_score)
         prob = gmm.predict_proba(input_score)
         if self.score_type in ['ent', 'energy']:
-            prob = prob[:, gmm.means_.argmin()]
-        elif self.score_type in ['msp', 'mls']:
             prob = prob[:, gmm.means_.argmax()]
+        elif self.score_type in ['msp', 'mls']:
+            prob = prob[:, gmm.means_.argmin()]
         else:
             raise NotImplementedError
-        
-        # 将 all_index 转换为 NumPy 数组
-        all_index = all_index.cpu().numpy()
-        all_score = all_score.numpy()
-        prob = prob.flatten()  # 确保 prob 是一维的
-
-        # 按索引排序
-        sorted_indices = all_index.argsort()  # 获取排序的索引
-        prob_sorted = prob[sorted_indices]  # 按索引排序
-        score_sorted = all_score[sorted_indices]  # 同样按索引排序
+    
 
         self.model.train()
 
-        return prob_sorted, score_sorted
+        return prob, score
 
     def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s, idx_ulb):
 
@@ -193,10 +176,11 @@ class PSMatch(AlgorithmBase):
         logits_x_lb = outputs['logits'][:num_lb]
         logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
 
-        w_known = self.w_known[idx_ulb]
+        w_unknown = self.w_unknown[idx_ulb]
+        # print(w_unknown.shape)
 
         # update memory queue
-        self.ood_queue.enqueue(x_ulb_w, w_known, self.Km)
+        self.ood_queue.enqueue(x_ulb_w, w_unknown, self.Km)
 
         with self.amp_cm():
             if is_warmup:
@@ -221,8 +205,6 @@ class PSMatch(AlgorithmBase):
                     ood_samples = self.ood_queue.get_samples(self.Nm)
                 else:
                     ood_samples = self.ood_queue.get_samples(num_lb)
-
-                # print(len(ood_samples))
 
                 if len(ood_samples) > 0:
                     x_ood = torch.stack(ood_samples).cuda(self.gpu)

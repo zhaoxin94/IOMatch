@@ -153,7 +153,7 @@ class NSMatch(AlgorithmBase):
     def build_memory(self):
         self.model.eval()
         with torch.no_grad():
-            for batch in self.loader_dict['train_ulb']:
+            for batch in self.loader_dict['ulb_eval']:
                 x_ulb_w = batch['x_ulb_w']
                 idx_ulb = batch['idx_ulb']
 

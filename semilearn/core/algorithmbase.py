@@ -128,9 +128,13 @@ class AlgorithmBase:
     def set_dataset(self):
         if self.rank != 0 and self.distributed:
             torch.distributed.barrier()
-        dataset_dict = get_dataset(self.args, self.algorithm,
-                                   self.args.dataset, self.args.num_labels,
-                                   self.args.num_classes, self.args.data_dir, eval_open=True)
+        dataset_dict = get_dataset(self.args,
+                                   self.algorithm,
+                                   self.args.dataset,
+                                   self.args.num_labels,
+                                   self.args.num_classes,
+                                   self.args.data_dir,
+                                   eval_open=True)
         self.args.ulb_dest_len = len(
             dataset_dict['train_ulb']
         ) if dataset_dict['train_ulb'] is not None else 0
@@ -155,7 +159,9 @@ class AlgorithmBase:
             num_workers=self.args.num_workers,
             distributed=self.distributed)
 
-        print(f"-------dataloader label batch_size:{loader_dict['train_lb'].drop_last}")
+        print(
+            f"-------dataloader label batch_size:{loader_dict['train_lb'].drop_last}"
+        )
 
         loader_dict['train_ulb'] = get_data_loader(
             self.args,
@@ -166,6 +172,15 @@ class AlgorithmBase:
             num_epochs=self.epochs,
             num_workers=2 * self.args.num_workers,
             distributed=self.distributed)
+
+        loader_dict['ulb_eval'] = get_data_loader(
+            self.args,
+            self.dataset_dict['ulb_eval'],
+            self.args.eval_batch_size,
+            # make sure data_sampler is None for evaluation
+            data_sampler=None,
+            num_workers=self.args.num_workers,
+            drop_last=False)
 
         loader_dict['eval'] = get_data_loader(
             self.args,
@@ -203,9 +218,13 @@ class AlgorithmBase:
 
     def set_optimizer(self):
         self.print_fn("Create optimizer and scheduler")
-        optimizer = get_optimizer(self.model, self.args.optim, self.args.lr,
-                                  self.args.momentum, self.args.weight_decay,
-                                  self.args.layer_decay, staged_lr=self.args.staged_lr)
+        optimizer = get_optimizer(self.model,
+                                  self.args.optim,
+                                  self.args.lr,
+                                  self.args.momentum,
+                                  self.args.weight_decay,
+                                  self.args.layer_decay,
+                                  staged_lr=self.args.staged_lr)
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
             self.num_train_iter,
@@ -359,9 +378,13 @@ class AlgorithmBase:
         self.ema.restore()
         self.model.train()
 
-        eval_dict = {eval_dest + '/loss': total_loss / total_num, eval_dest + '/top-1-acc': top1,
-                     eval_dest + '/precision': precision,
-                     eval_dest + '/recall': recall, eval_dest + '/F1': F1}
+        eval_dict = {
+            eval_dest + '/loss': total_loss / total_num,
+            eval_dest + '/top-1-acc': top1,
+            eval_dest + '/precision': precision,
+            eval_dest + '/recall': recall,
+            eval_dest + '/F1': F1
+        }
 
         # eval_dict = {
         #     eval_dest + '/loss': total_loss / total_num,
@@ -495,7 +518,7 @@ class AlgorithmBase:
         Get specificed arguments into argparse for each algorithm
         """
         return {}
-    
+
     def evaluate_open(self):
         """
         open-set evaluation function 
@@ -533,7 +556,8 @@ class AlgorithmBase:
                 unk_score = 1.0 - logits.max(1)[0]
 
                 softmax_output = F.softmax(logits, dim=1)
-                unknown_output = torch.ones(softmax_output.size(0)).unsqueeze(1)
+                unknown_output = torch.ones(
+                    softmax_output.size(0)).unsqueeze(1)
                 unknown_output = unknown_output * 0.8
                 unknown_output = unknown_output.cuda(self.gpu)
                 softmax_output = torch.cat((softmax_output, unknown_output),

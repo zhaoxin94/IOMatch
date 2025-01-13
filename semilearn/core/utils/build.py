@@ -87,6 +87,7 @@ def get_dataset(args,
     }
 
     test_dset = None
+    ulb_eval_dset = None
     if dataset in ["cifar10_openset", "cifar100_openset"]:
         lb_dset, ulb_dset, eval_dset, eval_full_dset = get_cifar_openset(
             args,
@@ -108,7 +109,7 @@ def get_dataset(args,
         if eval_open:
             test_dset = {'full': eval_full_dset}
     elif dataset == 'das6':
-        lb_dset, ulb_dset, eval_dset, eval_full_dset = get_das6(
+        lb_dset, ulb_dset, eval_dset, eval_full_dset, ulb_eval_dset = get_das6(
             args,
             algorithm,
             dataset,
@@ -138,7 +139,8 @@ def get_dataset(args,
         'train_lb': lb_dset,
         'train_ulb': ulb_dset,
         'eval': eval_dset,
-        'test': test_dset
+        'test': test_dset,
+        'ulb_eval': ulb_eval_dset
     }
     return dataset_dict
 
