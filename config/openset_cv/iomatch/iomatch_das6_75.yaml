@@ -2,8 +2,8 @@ algorithm: iomatch
 resume: True
 overwrite: True
 use_tensorboard: True
-epoch: 100
-num_train_iter: 20000
+epoch: 50
+num_train_iter: 10000
 num_eval_iter: 200
 num_labels: 260
 labeled_percent: 75

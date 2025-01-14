@@ -524,7 +524,7 @@ class AlgorithmBase:
         open-set evaluation function 
         """
         self.model.eval()
-        self.ema.apply_shadow()
+        # self.ema.apply_shadow()
 
         full_loader = self.loader_dict['test']['full']
         total_num = 0.0
@@ -623,7 +623,7 @@ class AlgorithmBase:
         results['o_knownacc'] = known_acc
         results['o_unknownacc'] = unknown_acc
 
-        self.ema.restore()
+        # self.ema.restore()
         self.model.train()
 
         return results

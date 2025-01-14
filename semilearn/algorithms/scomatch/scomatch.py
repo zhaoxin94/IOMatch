@@ -67,7 +67,7 @@ class ScoMatch(AlgorithmBase):
         self.score_type = 'energy'
         self.use_rot = args.use_rot
         self.Km = 1
-        self.Nm = 64
+        self.Nm = 32
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.75
@@ -228,7 +228,7 @@ class ScoMatch(AlgorithmBase):
         open-set evaluation function 
         """
         self.model.eval()
-        self.ema.apply_shadow()
+        # self.ema.apply_shadow()
 
         full_loader = self.loader_dict['test']['full']
         total_num = 0.0
@@ -321,7 +321,7 @@ class ScoMatch(AlgorithmBase):
         results['o_knownacc'] = known_acc
         results['o_unknownacc'] = unknown_acc
 
-        self.ema.restore()
+        # self.ema.restore()
         self.model.train()
 
         return results

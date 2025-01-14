@@ -2,9 +2,9 @@ algorithm: fixmatch
 resume: True
 overwrite: True
 use_tensorboard: True
-epoch: 200
-num_train_iter: 40000
-num_eval_iter: 200
+epoch: 50
+num_train_iter: 5000
+num_eval_iter: 100
 num_labels: 260
 labeled_percent: 45
 batch_size: 32

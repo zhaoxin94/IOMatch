@@ -7,7 +7,7 @@ num_train_iter: 20000
 num_eval_iter: 200
 num_labels: 260
 labeled_percent: 75
-batch_size: 32
+batch_size: 64
 eval_batch_size: 128
 T: 0.5
 p_cutoff: 0.95

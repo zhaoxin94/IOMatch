@@ -6,8 +6,8 @@ epoch: 100
 num_train_iter: 20000
 num_eval_iter: 200
 num_labels: 260
-labeled_percent: 300
-batch_size: 64
+labeled_percent: 600
+batch_size: 32
 eval_batch_size: 128
 T: 0.5
 p_cutoff: 0.95
