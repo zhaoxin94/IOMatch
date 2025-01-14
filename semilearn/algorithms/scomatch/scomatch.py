@@ -67,10 +67,10 @@ class ScoMatch(AlgorithmBase):
         self.score_type = 'energy'
         self.use_rot = args.use_rot
         self.Km = 1
-        self.Nm = 32
+        self.Nm = 64
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
-        self.ood_cutoff_min = 0.75
+        self.ood_cutoff_min = 0.8
         self.warm_epochs = 5
 
     def set_model(self):
