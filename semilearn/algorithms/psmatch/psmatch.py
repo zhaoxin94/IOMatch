@@ -56,7 +56,7 @@ class PSMatch(AlgorithmBase):
         self.Nm = 32
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
-        self.ood_cutoff_min = 0.75
+        self.ood_cutoff_min = 0.8
         self.warm_epochs = 5
 
     def set_model(self):

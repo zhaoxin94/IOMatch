@@ -67,7 +67,7 @@ class ScoMatch(AlgorithmBase):
         self.score_type = 'energy'
         self.use_rot = args.use_rot
         self.Km = 1
-        self.Nm = 64
+        self.Nm = 24
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.8
@@ -139,12 +139,12 @@ class ScoMatch(AlgorithmBase):
                 # ########################
                 # compute self-training loss
                 # ########################
-                probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
-                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
-                # with torch.no_grad():
-                #     logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
-                #     probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
-                #     confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                # probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+                # confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                with torch.no_grad():
+                    logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
+                    probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
+                    confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
 
                 # update dynamic threshold
                 id_selected = (pseudo_labels < self.num_classes) & (
