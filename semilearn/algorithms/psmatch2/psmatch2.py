@@ -14,6 +14,16 @@ from sklearn.mixture import GaussianMixture
 CE = nn.CrossEntropyLoss(reduction='none')
 
 
+def freeze_bn(m):
+    classname = m.__class__.__name__
+    if classname.find('BatchNorm') != 1:
+        m.eval()
+
+def unfreeze_bn(m):
+    classname = m.__class__.__name__
+    if classname.find('BatchNorm') != 1:
+        m.train()
+
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
         """
@@ -53,7 +63,7 @@ class PSMatch2(AlgorithmBase):
         self.score_type = 'energy'
         self.use_rot = args.use_rot
         self.Km = 1
-        self.Nm = 32
+        self.Nm = 64
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.8
@@ -90,11 +100,12 @@ class PSMatch2(AlgorithmBase):
 
             self.call_hook("before_train_epoch")
 
-            prob_unknown, _, _ = self.run_separation()
-            w_unknown = torch.from_numpy(prob_unknown)
-            # w_known = torch.from_numpy(prob_known)
-            self.w_unknown = w_unknown.view(-1, 1).cuda(self.gpu)
-            # self.w_known = w_known.view(-1, 1).cuda(self.gpu)
+            if self.epoch % 5 == 0:
+                prob_unknown, _, _ = self.run_separation()
+                w_unknown = torch.from_numpy(prob_unknown)
+                # w_known = torch.from_numpy(prob_known)
+                self.w_unknown = w_unknown.view(-1, 1).cuda(self.gpu)
+                # self.w_known = w_known.view(-1, 1).cuda(self.gpu)
 
             for data_lb, data_ulb in zip(self.loader_dict['train_lb'],
                                          self.loader_dict['train_ulb']):
@@ -114,6 +125,7 @@ class PSMatch2(AlgorithmBase):
 
     def run_separation(self):
         self.model.eval()
+        self.model.apply(freeze_bn)
         all_score = []
         all_index = []
 
@@ -166,6 +178,7 @@ class PSMatch2(AlgorithmBase):
             raise NotImplementedError
 
         self.model.train()
+        self.model.apply(unfreeze_bn)
 
         return prob_unknown, prob_known, score
 
@@ -178,11 +191,9 @@ class PSMatch2(AlgorithmBase):
         outputs = self.model(inputs)
         logits_x_lb = outputs['logits'][:num_lb]
         logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
-
+        
         w_unknown = self.w_unknown[idx_ulb]
         w_known = 1.0 - w_unknown
-        # print(w_unknown.shape)
-
         # update memory queue
         self.ood_queue.enqueue(x_ulb_w, w_unknown, self.Km)
 
