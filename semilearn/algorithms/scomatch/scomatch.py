@@ -1,5 +1,6 @@
 import numpy as np
 from collections import deque
+import os.path as osp
 
 import torch
 import torch.nn as nn
@@ -9,7 +10,7 @@ from semilearn.core.algorithmbase import AlgorithmBase
 from semilearn.algorithms.hooks import DistAlignQueueHook, PseudoLabelingHook, FixedThresholdingHook
 from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool, compute_roc, h_score_compute
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-
+from semilearn.core.utils import plot_cm
 
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
@@ -67,7 +68,7 @@ class ScoMatch(AlgorithmBase):
         self.score_type = 'energy'
         self.use_rot = args.use_rot
         self.Km = 1
-        self.Nm = 24
+        self.Nm = 48
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.8
@@ -139,12 +140,12 @@ class ScoMatch(AlgorithmBase):
                 # ########################
                 # compute self-training loss
                 # ########################
-                # probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
-                # confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
-                with torch.no_grad():
-                    logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
-                    probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
-                    confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                # with torch.no_grad():
+                #     logits_x_ulb_w_tea = self.ema_model(x_ulb_w)['logits']
+                #     probs_x_ulb_w = torch.softmax(logits_x_ulb_w_tea, dim=1)
+                #     confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
 
                 # update dynamic threshold
                 id_selected = (pseudo_labels < self.num_classes) & (
@@ -212,16 +213,16 @@ class ScoMatch(AlgorithmBase):
 
         return tb_dict
 
-    @staticmethod
-    def get_argument():
-        return [
-            SSL_Argument('--use_rot', str2bool, False),
-            SSL_Argument('--warm_epochs', int, 1),
-            SSL_Argument('--Km', int, 1),
-            SSL_Argument('--Nm', int, 64),
-            SSL_Argument('--id_cutoff', float, 0.95),
-            SSL_Argument('--ood_cutoff_min', float, 0.75),
-        ]
+    # @staticmethod
+    # def get_argument():
+    #     return [
+    #         SSL_Argument('--use_rot', str2bool, False),
+    #         SSL_Argument('--warm_epochs', int, 1),
+    #         SSL_Argument('--Km', int, 1),
+    #         SSL_Argument('--Nm', int, 64),
+    #         SSL_Argument('--id_cutoff', float, 0.95),
+    #         SSL_Argument('--ood_cutoff_min', float, 0.75),
+    #     ]
 
     def evaluate_open(self):
         """
@@ -305,6 +306,113 @@ class ScoMatch(AlgorithmBase):
         open_recall = recall_score(y_true, y_pred_open, average='macro')
         open_f1 = f1_score(y_true, y_pred_open, average='macro')
         open_cfmat = confusion_matrix(y_true, y_pred_open, normalize='true')
+        auroc = compute_roc(unk_score_all,
+                            y_true,
+                            num_known=int(self.num_classes))
+        h_score, known_acc, unknown_acc = h_score_compute(
+            y_true, y_pred_open, class_list)
+
+        results['o_acc'] = open_acc
+        results['o_precision'] = open_precision
+        results['o_recall'] = open_recall
+        results['o_f1'] = open_f1
+        results['o_cfmat'] = open_cfmat
+        results['o_auroc'] = auroc
+        results['o_hscore'] = h_score
+        results['o_knownacc'] = known_acc
+        results['o_unknownacc'] = unknown_acc
+
+        # self.ema.restore()
+        self.model.train()
+
+        return results
+
+
+    def test_final(self):
+        """
+        open-set evaluation function 
+        """
+        self.model.eval()
+        # self.ema.apply_shadow()
+
+        full_loader = self.loader_dict['test']['full']
+        total_num = 0.0
+        y_true_list = []
+        y_pred_closed_list = []
+        y_pred_open_list = []
+        unk_score_list = []
+
+        class_list = [i for i in range(self.num_classes + 1)]
+        print(f"class_list: {class_list}")
+        results = {}
+
+        with torch.no_grad():
+            for data in full_loader:
+                x = data['x_lb']
+                y = data['y_lb']
+
+                if isinstance(x, dict):
+                    x = {k: v.cuda(self.gpu) for k, v in x.items()}
+                else:
+                    x = x.cuda(self.gpu)
+                y = y.cuda(self.gpu)
+
+                num_batch = y.shape[0]
+                total_num += num_batch
+
+                logits = self.model(x)['logits']
+                pred_close = logits[:, :-1].max(1)[1]
+                pred_open = logits.max(1)[1]
+
+                softmax_output = F.softmax(logits, dim=1)
+                unk_score = softmax_output[:, -1]
+
+                y_true_list.extend(y.cpu().tolist())
+                y_pred_closed_list.extend(pred_close.cpu().tolist())
+                y_pred_open_list.extend(pred_open.cpu().tolist())
+                unk_score_list.extend(unk_score.cpu().tolist())
+
+        y_true = np.array(y_true_list)
+
+        closed_mask = y_true < self.num_classes
+        open_mask = y_true >= self.num_classes
+        y_true[open_mask] = self.num_classes
+
+        y_pred_closed = np.array(y_pred_closed_list)
+        y_pred_open = np.array(y_pred_open_list)
+        unk_score_all = np.array(unk_score_list)
+
+        # Closed Accuracy on Closed Test Data
+        y_true_closed = y_true[closed_mask]
+        y_pred_closed = y_pred_closed[closed_mask]
+
+        closed_acc = accuracy_score(y_true_closed, y_pred_closed)
+        closed_precision = precision_score(y_true_closed,
+                                           y_pred_closed,
+                                           average='macro')
+        closed_recall = recall_score(y_true_closed,
+                                     y_pred_closed,
+                                     average='macro')
+        closed_F1 = f1_score(y_true_closed, y_pred_closed, average='macro')
+        closed_cfmat = confusion_matrix(y_true_closed,
+                                        y_pred_closed)
+        closed_cfmat_path = osp.join(self.save_dir, 'close_cm')
+        plot_cm(closed_cfmat, save_path=closed_cfmat_path)
+
+        results['c_acc'] = closed_acc
+        results['c_precision'] = closed_precision
+        results['c_recall'] = closed_recall
+        results['c_f1'] = closed_F1
+        results['c_cfmat'] = closed_cfmat
+
+        # Open Accuracy on Full Test Data
+        open_acc = accuracy_score(y_true, y_pred_open)
+        open_precision = precision_score(y_true, y_pred_open, average='macro')
+        open_recall = recall_score(y_true, y_pred_open, average='macro')
+        open_f1 = f1_score(y_true, y_pred_open, average='macro')
+        open_cfmat = confusion_matrix(y_true, y_pred_open)
+        open_cfmat_path = osp.join(self.save_dir, 'open_cm')
+        plot_cm(open_cfmat, save_path=open_cfmat_path)
         auroc = compute_roc(unk_score_all,
                             y_true,
                             num_known=int(self.num_classes))

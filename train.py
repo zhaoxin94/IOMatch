@@ -180,6 +180,10 @@ def get_config():
     # zhaoxin add
     parser.add_argument('--staged_lr', type=str2bool, default=False)
 
+    parser.add_argument("--eval-only",
+                        action="store_true",
+                        help="evaluation only")
+
     # add algorithm specific parameters
     args = parser.parse_args()
     over_write_args_from_file(args, args.c)
@@ -312,6 +316,12 @@ def main_worker(gpu, ngpus_per_node, args):
     model.model = send_model_cuda(args, model.model)
     model.ema_model = send_model_cuda(args, model.ema_model)
     logger.info(f"Arguments: {model.args}")
+
+
+    if args.eval_only:
+        model.load_model(args.load_path)
+        model.test_final()
+        return
 
     # If args.resume, load checkpoints from args.load_path
     if args.resume and os.path.exists(args.load_path):
