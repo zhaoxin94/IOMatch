@@ -11,8 +11,8 @@ from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from sklearn.mixture import GaussianMixture
 
-
 CE = nn.CrossEntropyLoss(reduction='none')
+
 
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
@@ -90,9 +90,11 @@ class PSMatch(AlgorithmBase):
 
             self.call_hook("before_train_epoch")
 
-            prob, _ = self.run_separation()
-            w_unknown = torch.from_numpy(prob)
+            prob_unknown, prob_known, _ = self.run_separation()
+            w_unknown = torch.from_numpy(prob_unknown)
+            w_known = torch.from_numpy(prob_known)
             self.w_unknown = w_unknown.view(-1, 1).cuda(self.gpu)
+            self.w_known = w_known.view(-1, 1).cuda(self.gpu)
 
             for data_lb, data_ulb in zip(self.loader_dict['train_lb'],
                                          self.loader_dict['train_ulb']):
@@ -130,10 +132,10 @@ class PSMatch(AlgorithmBase):
                     score = -torch.logsumexp(logits[:, :-1], dim=1)
                 else:
                     raise NotImplementedError
-                
+
                 all_score.append(score)
                 all_index.append(idx_ulb)
-            
+
         all_score = torch.cat(all_score, dim=0)
         all_score = (all_score - all_score.min()) / (all_score.max() -
                                                      all_score.min())
@@ -155,16 +157,17 @@ class PSMatch(AlgorithmBase):
         gmm.fit(input_score)
         prob = gmm.predict_proba(input_score)
         if self.score_type in ['ent', 'energy']:
-            prob = prob[:, gmm.means_.argmax()]
+            prob_unknown = prob[:, gmm.means_.argmax()]
+            prob_known = prob[:, gmm.means_.argmin()]
         elif self.score_type in ['msp', 'mls']:
-            prob = prob[:, gmm.means_.argmin()]
+            prob_unknown = prob[:, gmm.means_.argmin()]
+            prob_known = prob[:, gmm.means_.argmax()]
         else:
             raise NotImplementedError
-    
 
         self.model.train()
 
-        return prob, score
+        return prob_unknown, prob_known, score
 
     def train_step(self, x_lb, y_lb, x_ulb_w, x_ulb_s, idx_ulb):
 
@@ -177,6 +180,7 @@ class PSMatch(AlgorithmBase):
         logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
 
         w_unknown = self.w_unknown[idx_ulb]
+        w_known = self.w_known[idx_ulb]
         # print(w_unknown.shape)
 
         # update memory queue
@@ -268,6 +272,7 @@ class PSMatch(AlgorithmBase):
                 # close-set self-training
                 logits_id = logits_x_ulb_s[:, :self.num_classes][id_mask]
                 pseudo_labels_id = pseudo_labels[id_mask]
+                w_known_id = w_known[id_mask]
                 if logits_id.size(0) > 0:
                     loss_u_close = F.cross_entropy(logits_id,
                                                    pseudo_labels_id,
@@ -297,7 +302,7 @@ class PSMatch(AlgorithmBase):
         open-set evaluation function 
         """
         self.model.eval()
-        self.ema.apply_shadow()
+        # self.ema.apply_shadow()
 
         full_loader = self.loader_dict['test']['full']
         total_num = 0.0
@@ -390,7 +395,7 @@ class PSMatch(AlgorithmBase):
         results['o_knownacc'] = known_acc
         results['o_unknownacc'] = unknown_acc
 
-        self.ema.restore()
+        # self.ema.restore()
         self.model.train()
 
         return results

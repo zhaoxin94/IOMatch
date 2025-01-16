@@ -5,6 +5,7 @@ from .labelonly import LabelOnly
 from .scomatch import ScoMatch
 from .nsmatch import NSMatch
 from .psmatch import PSMatch
+from .psmatch2 import PSMatch2
 
 # if any new alg., please append the dict
 name2alg = {
@@ -14,7 +15,8 @@ name2alg = {
     "labelonly": LabelOnly,
     "scomatch": ScoMatch,
     "nsmatch": NSMatch,
-    "psmatch": PSMatch
+    "psmatch": PSMatch,
+    "psmatch2": PSMatch2
 }
 
 
