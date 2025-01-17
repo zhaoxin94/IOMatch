@@ -2,9 +2,9 @@ algorithm: labelonly
 resume: True
 overwrite: True
 use_tensorboard: True
-epoch: 50
-num_train_iter: 5000
-num_eval_iter: 100
+epoch: 20
+num_train_iter: 2000
+num_eval_iter: 200
 num_labels: 260
 labeled_percent: 150
 batch_size: 32

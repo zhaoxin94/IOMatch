@@ -90,11 +90,12 @@ class PSMatch(AlgorithmBase):
 
             self.call_hook("before_train_epoch")
 
-            prob_unknown, prob_known, _ = self.run_separation()
-            w_unknown = torch.from_numpy(prob_unknown)
-            w_known = torch.from_numpy(prob_known)
-            self.w_unknown = w_unknown.view(-1, 1).cuda(self.gpu)
-            self.w_known = w_known.view(-1, 1).cuda(self.gpu)
+            if self.epoch % 5 == 0:
+                prob_unknown, _, _ = self.run_separation()
+                w_unknown = torch.from_numpy(prob_unknown)
+                # w_known = torch.from_numpy(prob_known)
+                self.w_unknown = w_unknown.view(-1, 1).cuda(self.gpu)
+                # self.w_known = w_known.view(-1, 1).cuda(self.gpu)
 
             for data_lb, data_ulb in zip(self.loader_dict['train_lb'],
                                          self.loader_dict['train_ulb']):
@@ -130,6 +131,10 @@ class PSMatch(AlgorithmBase):
                     score = outputs[:, :-1].max(1)[0]
                 elif self.score_type == 'energy':
                     score = -torch.logsumexp(logits[:, :-1], dim=1)
+                elif self.score_type == 'ent':
+                    logits_id = logits[:, :-1]
+                    output_id = F.softmax(logits_id, dim=1)
+                    score = torch.sum(-output_id * torch.log(output_id + 1e-9), dim=1)
                 else:
                     raise NotImplementedError
 
@@ -180,7 +185,7 @@ class PSMatch(AlgorithmBase):
         logits_x_ulb_w, logits_x_ulb_s = outputs['logits'][num_lb:].chunk(2)
 
         w_unknown = self.w_unknown[idx_ulb]
-        w_known = self.w_known[idx_ulb]
+        w_known = 1.0 - w_unknown
         # print(w_unknown.shape)
 
         # update memory queue

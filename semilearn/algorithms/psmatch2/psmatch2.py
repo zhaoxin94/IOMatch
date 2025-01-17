@@ -60,13 +60,13 @@ class PSMatch2(AlgorithmBase):
     def __init__(self, args, net_builder, tb_log=None, logger=None):
         super().__init__(args, net_builder, tb_log, logger)
         # iomatch specified arguments
-        self.score_type = 'energy'
+        self.score_type = 'ent'
         self.use_rot = args.use_rot
         self.Km = 1
-        self.Nm = 64
+        self.Nm = 32
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
-        self.ood_cutoff_min = 0.8
+        self.ood_cutoff_min = 0.75
         self.warm_epochs = 5
 
     def set_model(self):
@@ -142,6 +142,10 @@ class PSMatch2(AlgorithmBase):
                     score = outputs[:, :-1].max(1)[0]
                 elif self.score_type == 'energy':
                     score = -torch.logsumexp(logits[:, :-1], dim=1)
+                elif self.score_type == 'ent':
+                    logits_id = logits[:, :-1]
+                    output_id = F.softmax(logits_id, dim=1)
+                    score = torch.sum(-output_id * torch.log(output_id + 1e-9), dim=1)
                 else:
                     raise NotImplementedError
 
