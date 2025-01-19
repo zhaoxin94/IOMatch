@@ -88,7 +88,7 @@ class NSMatch(AlgorithmBase):
         # iomatch specified arguments
         self.score_type = 'energy'
         self.use_rot = args.use_rot
-        self.K = 10
+        self.K = 4
         self.Km = 1
         self.Nm = 32
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
@@ -263,7 +263,7 @@ class NSMatch(AlgorithmBase):
                     w = w / max_entropy
                     w = torch.exp(-w)
 
-                    self.print_fn(w)
+                    # self.print_fn(w)
 
                 # generate mask
                 id_mask = (pseudo_labels < self.num_classes)
@@ -317,7 +317,7 @@ class NSMatch(AlgorithmBase):
         open-set evaluation function 
         """
         self.model.eval()
-        self.ema.apply_shadow()
+        # self.ema.apply_shadow()
 
         full_loader = self.loader_dict['test']['full']
         total_num = 0.0
@@ -410,7 +410,7 @@ class NSMatch(AlgorithmBase):
         results['o_knownacc'] = known_acc
         results['o_unknownacc'] = unknown_acc
 
-        self.ema.restore()
+        # self.ema.restore()
         self.model.train()
 
         return results

@@ -90,7 +90,7 @@ class PSMatch(AlgorithmBase):
 
             self.call_hook("before_train_epoch")
 
-            if self.epoch % 5 == 0:
+            if self.epoch % 4 == 0:
                 prob_unknown, _, _ = self.run_separation()
                 w_unknown = torch.from_numpy(prob_unknown)
                 # w_known = torch.from_numpy(prob_known)

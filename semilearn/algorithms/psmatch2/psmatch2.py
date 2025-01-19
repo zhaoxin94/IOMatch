@@ -60,13 +60,13 @@ class PSMatch2(AlgorithmBase):
     def __init__(self, args, net_builder, tb_log=None, logger=None):
         super().__init__(args, net_builder, tb_log, logger)
         # iomatch specified arguments
-        self.score_type = 'ent'
+        self.score_type = 'energy'
         self.use_rot = args.use_rot
         self.Km = 1
         self.Nm = 32
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
-        self.ood_cutoff_min = 0.75
+        self.ood_cutoff_min = 0.8
         self.warm_epochs = 5
 
     def set_model(self):
@@ -100,7 +100,7 @@ class PSMatch2(AlgorithmBase):
 
             self.call_hook("before_train_epoch")
 
-            if self.epoch % 5 == 0:
+            if self.epoch % 4 == 0:
                 prob_unknown, _, _ = self.run_separation()
                 w_unknown = torch.from_numpy(prob_unknown)
                 # w_known = torch.from_numpy(prob_known)
@@ -239,12 +239,31 @@ class PSMatch2(AlgorithmBase):
                 # compute self-training loss
                 # ########################
                 probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
-                _, pseudo_labels = probs_x_ulb_w.max(dim=1)
+                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+
+               # update dynamic threshold
+                id_selected = (pseudo_labels < self.num_classes) & (
+                    confidence > self.id_cutoff)
+                ood_selected = (pseudo_labels == self.num_classes) & (
+                    confidence > self.id_cutoff)
+                num_id_selected = id_selected.sum().item()
+                num_ood_selected = ood_selected.sum().item()
+
+                ood_cutoff = self.id_cutoff
+                if num_id_selected > 0:
+                    ood_cutoff = (num_ood_selected /
+                                  num_id_selected) * self.id_cutoff
+                    ood_cutoff = max(self.ood_cutoff_min,
+                                     min(ood_cutoff, self.id_cutoff))
 
                 # generate mask
-                id_mask = (pseudo_labels < self.num_classes)
-                ood_mask = (pseudo_labels == self.num_classes)
-
+                id_mask = (pseudo_labels < self.num_classes) & (confidence >
+                                                                self.id_cutoff)
+                ood_mask = (pseudo_labels == self.num_classes) & (confidence >
+                                                                  ood_cutoff)
+                # id_mask = (pseudo_labels < self.num_classes)
+                # ood_mask = (pseudo_labels == self.num_classes)
+                mask = id_mask | ood_mask
                 # open-set self-training
                 logits_x_ulb = torch.cat([logits_x_ulb_w, logits_x_ulb_s],
                                          dim=0)
