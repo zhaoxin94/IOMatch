@@ -37,6 +37,11 @@ class OODMemoryQueue:
             msp_scores = probs.max(dim=1).values  # [batch_size]
             # 找出 MSP 最小的 K 个样本的索引
             _, smallest_indices = torch.topk(msp_scores, k=k, largest=False)
+        elif self.score_type == 'ent':
+            logits_id = logits[:, :-1]
+            output_id = F.softmax(logits_id, dim=1)
+            ent_scores = torch.sum(-output_id * torch.log(output_id), dim=1)
+            _, smallest_indices = torch.topk(ent_scores, k=k, largest=True)
         elif self.score_type == 'energy':
             enery_scores = -torch.logsumexp(logits[:, :-1], dim=1)
             _, smallest_indices = torch.topk(enery_scores, k=k, largest=True)
@@ -72,7 +77,7 @@ class ScoMatch(AlgorithmBase):
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.8
-        self.warm_epochs = 10
+        self.warm_epochs = 5
 
     def set_model(self):
         model = self.net_builder(num_classes=self.num_classes + 1,
@@ -196,7 +201,7 @@ class ScoMatch(AlgorithmBase):
                 else:
                     loss_u_close = torch.tensor(0.0).to(self.gpu)
 
-                loss_total = loss_sup_id + loss_sup_ood + loss_u_open + loss_u_close
+                loss_total = loss_sup_id + loss_sup_ood  + loss_u_close + loss_u_open
 
                 tb_dict = {
                     'train/sup_id_loss': loss_sup_id.item(),
