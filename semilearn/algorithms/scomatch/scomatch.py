@@ -10,7 +10,7 @@ from semilearn.core.algorithmbase import AlgorithmBase
 from semilearn.algorithms.hooks import DistAlignQueueHook, PseudoLabelingHook, FixedThresholdingHook
 from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool, compute_roc, h_score_compute
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-from semilearn.core.utils import plot_cm
+from semilearn.core.utils import plot_cm, plot_tsne
 
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
@@ -346,6 +346,7 @@ class ScoMatch(AlgorithmBase):
         y_pred_closed_list = []
         y_pred_open_list = []
         unk_score_list = []
+        all_feat = []
 
         class_list = [i for i in range(self.num_classes + 1)]
         print(f"class_list: {class_list}")
@@ -364,8 +365,10 @@ class ScoMatch(AlgorithmBase):
 
                 num_batch = y.shape[0]
                 total_num += num_batch
-
-                logits = self.model(x)['logits']
+                
+                outputs = self.model(x)
+                feat = outputs['feat']
+                logits = outputs['logits']
                 pred_close = logits[:, :-1].max(1)[1]
                 pred_open = logits.max(1)[1]
 
@@ -377,6 +380,9 @@ class ScoMatch(AlgorithmBase):
                 y_pred_open_list.extend(pred_open.cpu().tolist())
                 unk_score_list.extend(unk_score.cpu().tolist())
 
+                all_feat.append(feat)
+
+        all_feat = torch.cat(all_feat, dim=0)
         y_true = np.array(y_true_list)
 
         closed_mask = y_true < self.num_classes
@@ -436,5 +442,7 @@ class ScoMatch(AlgorithmBase):
 
         # self.ema.restore()
         self.model.train()
+
+        plot_tsne(all_feat, y_pred_open, self.num_classes, self.save_dir)
 
         return results
