@@ -1,3 +1,3 @@
 from .build import *
 from .misc import *
-from .plot import plot_cm
+from .plot import *
