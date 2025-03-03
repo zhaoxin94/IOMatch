@@ -39,7 +39,7 @@ from matplotlib.ticker import MaxNLocator  # 导入 MaxNLocator
 #     plt.close()  # 关闭图像以释放资源
 
 
-def plot_cm(cm, labels=None, save_path='', label_fontsize=15, annot_fontsize=18):
+def plot_cm(cm, labels=None, save_path='', label_fontsize=20, annot_fontsize=20):
     # 设置全局字体为 Times New Roman
     plt.rcParams['font.family'] = 'Times New Roman'
     # plt.rcParams['font.family'] = 'serif'
@@ -67,12 +67,8 @@ def plot_cm(cm, labels=None, save_path='', label_fontsize=15, annot_fontsize=18)
     plt.tight_layout()
    
     # 保存图像
-<<<<<<< HEAD
     plt.savefig(save_path+'.png', dpi=300, format='png', bbox_inches='tight')
     plt.savefig(save_path+'.pdf', dpi=300, format='pdf', bbox_inches='tight')
-    plt.close()  # 关闭图像以释放资源
-=======
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()  # 关闭图像以释放资源
 
 def plot_tsne(feats, preds, n_classes, save_path='', num_samples=1000):
@@ -114,4 +110,3 @@ def plot_tsne(feats, preds, n_classes, save_path='', num_samples=1000):
                     format='pdf',
                     dpi=600)
     plt.close()
->>>>>>> cae1bcdf44750c54077dee91506fcaf64f105e34
