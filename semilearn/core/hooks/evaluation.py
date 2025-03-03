@@ -1,5 +1,7 @@
 import os
 from .hook import Hook
+import shutil
+import os.path as osp
 
 
 # class EvaluationHook(Hook):
@@ -42,6 +44,8 @@ class EvaluationHook(Hook):
                 algorithm.best_eval_acc = results['c_acc']
                 algorithm.best_it = algorithm.it
                 algorithm.best_results = results
+                # shutil.copy(osp.join(algorithm.save_dir, 'close_cm.pdf'), osp.join(algorithm.save_dir, 'best_close_cm.pdf'))
+                # shutil.copy(osp.join(algorithm.save_dir, 'open_cm.pdf'), osp.join(algorithm.save_dir, 'best_open_cm.pdf'))
 
     def after_run(self, algorithm):
         return

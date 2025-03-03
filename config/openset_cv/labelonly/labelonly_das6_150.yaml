@@ -3,7 +3,7 @@ resume: True
 overwrite: True
 use_tensorboard: True
 epoch: 20
-num_train_iter: 2000
+num_train_iter: 3000
 num_eval_iter: 200
 num_labels: 260
 labeled_percent: 150

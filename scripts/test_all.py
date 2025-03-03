@@ -26,7 +26,7 @@ if __name__ == '__main__':
                         type=int,
                         help="Repeat times")
     parser.add_argument('--seed', type=int, default=2024)
-    parser.add_argument('--num_labels', type=int, default=75)
+    parser.add_argument('--num_labels', type=int, default=150)
     parser.add_argument('--exp_name', type=str, default='')
     parser.add_argument("--gpu", "-g", default=0, type=int, help="Gpu ID")
     parser.add_argument("--backbone",
@@ -58,7 +58,7 @@ if __name__ == '__main__':
     for i in range(args.n_trials):
         # path setting
         output_dir = osp.join(base_dir, str(i + 1))
-        load_path = osp.join(output_dir, 'latest_model.pth')
+        load_path = osp.join(output_dir, 'model_best.pth')
 
         # specify random seed
         seed = args.seed
