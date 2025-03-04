@@ -40,8 +40,8 @@ class EvaluationHook(Hook):
             algorithm.eval_dict.update(results)
             
             # update best metrics
-            if results['c_acc'] >= algorithm.best_eval_acc:
-                algorithm.best_eval_acc = results['c_acc']
+            if results['o_acc'] >= algorithm.best_eval_acc:
+                algorithm.best_eval_acc = results['o_acc']
                 algorithm.best_it = algorithm.it
                 algorithm.best_results = results
                 # shutil.copy(osp.join(algorithm.save_dir, 'close_cm.pdf'), osp.join(algorithm.save_dir, 'best_close_cm.pdf'))

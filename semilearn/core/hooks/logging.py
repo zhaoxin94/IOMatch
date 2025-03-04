@@ -39,7 +39,7 @@ class LoggingHook(Hook):
                     f"Open-Set Evaluation: O_Acc:{algorithm.eval_dict['o_acc'] * 100:.2f}, O_Precision:{algorithm.eval_dict['o_precision'] * 100:.2f}, O_Recall:{algorithm.eval_dict['o_recall'] * 100:.2f}, O_F1-score:{algorithm.eval_dict['o_f1'] * 100:.2f}, AUROC:{algorithm.eval_dict['o_auroc']*100:.2f},H-score:{algorithm.eval_dict['o_hscore']*100:.2f}, Known-acc:{algorithm.eval_dict['o_knownacc']*100:.2f}, Unknown-acc:{algorithm.eval_dict['o_unknownacc']*100:.2f}"
                 )
                 algorithm.print_fn(
-                    f"BEST_CLOSE_ACC: {algorithm.best_eval_acc * 100:.2f}, BEST_AUROC: {algorithm.best_results['o_auroc'] * 100:.2f}, at {algorithm.best_it + 1} iters"
+                    f"BEST_OPEN_ACC: {algorithm.best_eval_acc * 100:.2f}, BEST_AUROC: {algorithm.best_results['o_auroc'] * 100:.2f}, at {algorithm.best_it + 1} iters"
                 )
                 algorithm.print_fn(
                     f"-----------------------{algorithm.it + 1} iteration: Validating End!------------------------"

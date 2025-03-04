@@ -443,6 +443,6 @@ class ScoMatch(AlgorithmBase):
         # self.ema.restore()
         self.model.train()
 
-        plot_tsne(all_feat, y_pred_open, self.num_classes, self.save_dir)
+        plot_tsne(all_feat, y_true, self.num_classes, self.save_dir)
 
         return results

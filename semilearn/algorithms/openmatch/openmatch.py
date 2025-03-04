@@ -15,7 +15,7 @@ from semilearn.datasets.cv_datasets.datasetbase import BasicDataset
 from semilearn.core.utils import get_data_loader
 from semilearn.algorithms.hooks import PseudoLabelingHook, FixedThresholdingHook
 from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool, compute_roc, h_score_compute
-from semilearn.core.utils import plot_cm
+from semilearn.core.utils import plot_cm, plot_tsne
 
 from .utils import ova_loss_func, em_loss_func, socr_loss_func
 
@@ -106,7 +106,7 @@ class OpenMatchNet(nn.Module):
         feat = self.backbone(x, only_feat=True)
         logits = self.backbone(feat, only_fc=True)
         logits_open = self.ova_classifiers(feat)
-        return {'logits': logits, 'logits_open': logits_open}
+        return {'logits': logits, 'logits_open': logits_open, 'feat':feat}
 
     def group_matcher(self, coarse=False):
         matcher = self.backbone.group_matcher(coarse, prefix='backbone.')
@@ -462,6 +462,7 @@ class OpenMatch(AlgorithmBase):
         y_pred_closed_list = []
         y_pred_ova_list = []
         unk_score_list = []
+        all_feat = []
 
         class_list = [i for i in range(self.num_classes + 1)]
         print(f"class_list: {class_list}")
@@ -482,6 +483,7 @@ class OpenMatch(AlgorithmBase):
                 total_num += num_batch
 
                 out = self.model(x)
+                feat = out['feat']
                 logits, logits_open = out['logits'], out['logits_open']
                 pred_closed = logits.data.max(1)[1]
 
@@ -498,6 +500,9 @@ class OpenMatch(AlgorithmBase):
                 y_pred_ova_list.extend(pred_open.cpu().tolist())
                 unk_score_list.extend(unk_score.cpu().tolist())
 
+                all_feat.append(feat)
+
+        all_feat = torch.cat(all_feat, dim=0)
         y_true = np.array(y_true_list)
 
         closed_mask = y_true < self.num_classes
@@ -557,5 +562,6 @@ class OpenMatch(AlgorithmBase):
 
         # self.ema.restore()
         self.model.train()
+        plot_tsne(all_feat, y_true, self.num_classes, self.save_dir)
 
         return results

@@ -15,7 +15,7 @@ from torch.amp import autocast, GradScaler
 from semilearn.core.hooks import Hook, get_priority, CheckpointHook, TimerHook, LoggingHook, DistSamplerSeedHook, \
     ParamUpdateHook, EvaluationHook, EMAHook
 from semilearn.core.utils import get_dataset, get_data_loader, get_optimizer, get_cosine_schedule_with_warmup, \
-    Bn_Controller, plot_cm
+    Bn_Controller, plot_cm, plot_tsne
 
 
 def compute_roc(unk_all, label_all, num_known):
@@ -641,6 +641,7 @@ class AlgorithmBase:
         y_pred_closed_list = []
         y_pred_open_list = []
         unk_score_list = []
+        all_feat = []
 
         class_list = [i for i in range(self.num_classes + 1)]
         print(f"class_list: {class_list}")
@@ -660,7 +661,9 @@ class AlgorithmBase:
                 num_batch = y.shape[0]
                 total_num += num_batch
 
-                logits = self.model(x)['logits']
+                outputs = self.model(x)
+                feat = outputs['feat']
+                logits = outputs['logits']
                 pred_closed = logits.max(1)[1]
                 unk_score = 1.0 - logits.max(1)[0]
 
@@ -678,6 +681,9 @@ class AlgorithmBase:
                 y_pred_open_list.extend(pred_open.cpu().tolist())
                 unk_score_list.extend(unk_score.cpu().tolist())
 
+                all_feat.append(feat)
+
+        all_feat = torch.cat(all_feat, dim=0)
         y_true = np.array(y_true_list)
 
         closed_mask = y_true < self.num_classes
@@ -737,5 +743,7 @@ class AlgorithmBase:
 
         # self.ema.restore()
         self.model.train()
+
+        plot_tsne(all_feat, y_true, self.num_classes, self.save_dir)
 
         return results
