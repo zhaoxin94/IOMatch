@@ -32,4 +32,3 @@ def mobilenet_v2(pretrained=False, pretrained_path=None, **kwargs):
 
     return model
     
-

@@ -1,0 +1,1 @@
+from .efficientnetv2 import efficientnetv2_s, efficientnetv2_m

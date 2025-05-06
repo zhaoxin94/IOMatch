@@ -1,1 +1,2 @@
-from .resnet import resnet50, resnet18
+from .resnet import resnet18
+from .resnet_timm import resnet50
