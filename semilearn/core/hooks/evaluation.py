@@ -37,6 +37,7 @@ class EvaluationHook(Hook):
     def after_train_step(self, algorithm):
         if self.every_n_iters(algorithm, algorithm.num_eval_iter) or self.is_last_iter(algorithm):
             results = algorithm.evaluate_open()
+            algorithm.evaluate_ulb()
             algorithm.eval_dict.update(results)
             
             # update best metrics

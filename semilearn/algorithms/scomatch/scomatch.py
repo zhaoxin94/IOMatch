@@ -10,7 +10,7 @@ from semilearn.core.algorithmbase import AlgorithmBase
 from semilearn.algorithms.hooks import DistAlignQueueHook, PseudoLabelingHook, FixedThresholdingHook
 from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, str2bool, compute_roc, h_score_compute
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-from semilearn.core.utils import plot_cm, plot_tsne
+from semilearn.core.utils import plot_cm, plot_tsne, plot_energy_distribution
 
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
@@ -73,7 +73,7 @@ class ScoMatch(AlgorithmBase):
         self.score_type = 'energy'
         self.use_rot = args.use_rot
         self.Km = 1
-        self.Nm = 32
+        self.Nm = 64
         self.ood_queue = OODMemoryQueue(self.Nm, self.score_type)
         self.id_cutoff = 0.95
         self.ood_cutoff_min = 0.8
@@ -228,6 +228,59 @@ class ScoMatch(AlgorithmBase):
     #         SSL_Argument('--id_cutoff', float, 0.95),
     #         SSL_Argument('--ood_cutoff_min', float, 0.75),
     #     ]
+
+
+    def evaluate_ulb(self):
+
+        if self.epoch < self.warm_epochs:
+            return 
+        
+        self.model.eval()
+        ulb_eval_dataloader = self.loader_dict['ulb_eval']
+
+        energy_id_list = []
+
+        # compute ood_samples energy
+        ood_samples = self.ood_queue.get_samples(self.Nm)
+
+        with torch.no_grad():
+            if len(ood_samples) > 0:
+                x_ood = torch.stack(ood_samples).cuda(self.gpu)
+                logits_ood = self.model(x_ood)['logits']
+                energy_ood = -torch.logsumexp(logits_ood[:, :-1], dim=1)
+                energy_ood = energy_ood.detach().cpu()
+            else:
+                energy_ood = torch.empty(0)
+
+            for data in ulb_eval_dataloader:
+                x_ulb_w = data['x_ulb_w'].cuda(self.gpu)
+                x_ulb_s = data['x_ulb_s'].cuda(self.gpu)
+
+                inputs = torch.cat((x_ulb_w, x_ulb_s))
+                outputs = self.model(inputs)
+                logits_x_ulb_w, logits_x_ulb_s = outputs['logits'].chunk(2)
+
+                probs_x_ulb_w = torch.softmax(logits_x_ulb_w, dim=1)
+                confidence, pseudo_labels = probs_x_ulb_w.max(dim=1)
+
+                id_mask = (pseudo_labels < self.num_classes) & (confidence >
+                                                            self.id_cutoff)
+                
+                if id_mask.any():
+                    logits_id = logits_x_ulb_s[:, :self.num_classes][id_mask]
+                    energy_id = -torch.logsumexp(logits_id, dim=1)
+                    energy_id_list.append(energy_id.detach().cpu())
+
+            # 汇总
+            if len(energy_id_list) > 0:
+                energy_id = torch.cat(energy_id_list, dim=0)
+            else:
+                energy_id = torch.empty(0)
+
+            plot_energy_distribution(energy_id, energy_ood, self.save_dir, epoch=self.epoch)
+
+        self.model.train()
+            
 
     def evaluate_open(self):
         """

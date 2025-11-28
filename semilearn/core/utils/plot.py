@@ -4,8 +4,8 @@ from sklearn.manifold import TSNE
 import seaborn as sns
 import os.path as osp
 from matplotlib.ticker import MaxNLocator  # 导入 MaxNLocator
-
-
+import torch
+import os
 
 # def plot_cm(cm, labels=None, save_path='', label_fontsize=16, annot_fontsize=20):
 #     # 设置全局字体为 Times New Roman
@@ -153,3 +153,31 @@ def plot_tsne(feats, labels, n_classes, save_path='', num_samples=1000):
                     format='pdf',
                     dpi=600)
     plt.close()
+
+def plot_energy_distribution(energy_known, energy_unknown, output_dir, epoch=None):
+
+    # 转成 numpy 方便 seaborn
+    ek = energy_known.numpy() if torch.is_tensor(energy_known) else energy_known
+    eu = energy_unknown.numpy() if torch.is_tensor(energy_unknown) else energy_unknown
+
+    plt.figure(figsize=(7, 5))
+
+    # KDE
+    sns.kdeplot(ek, label='Known (treated)', linewidth=2)
+    sns.kdeplot(eu, label='Unknown (buffer)', linewidth=2)
+
+    # Histogram
+    plt.hist(ek, bins=40, alpha=0.35, label='Known', density=True)
+    plt.hist(eu, bins=40, alpha=0.35, label='Unknown', density=True)
+
+    plt.xlabel("Energy Score")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.tight_layout()
+
+    file_name = f'energy_score_{epoch}.jpg' if epoch else f'energy_score.jpg'
+    save_path = os.path.join(output_dir, file_name)
+    plt.savefig(save_path, format='jpg', dpi=800)
+    plt.close('all')
+
+    print(f"[plot_energy_distribution] Saved to {save_path}")
