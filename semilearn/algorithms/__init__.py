@@ -6,6 +6,7 @@ from .scomatch import ScoMatch
 from .nsmatch import NSMatch
 from .psmatch import PSMatch
 from .psmatch2 import PSMatch2
+# from .dac import DAC
 
 # if any new alg., please append the dict
 name2alg = {
@@ -16,7 +17,8 @@ name2alg = {
     "scomatch": ScoMatch,
     "nsmatch": NSMatch,
     "psmatch": PSMatch,
-    "psmatch2": PSMatch2
+    "psmatch2": PSMatch2,
+    # "dac": DAC
 }
 
 

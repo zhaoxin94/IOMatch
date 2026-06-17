@@ -12,6 +12,7 @@ from semilearn.algorithms.utils import ce_loss, consistency_loss, SSL_Argument, 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from semilearn.core.utils import plot_cm, plot_tsne, plot_energy_distribution
 
+
 class OODMemoryQueue:
     def __init__(self, max_size, score_type):
         """

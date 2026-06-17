@@ -154,30 +154,63 @@ def plot_tsne(feats, labels, n_classes, save_path='', num_samples=1000):
                     dpi=600)
     plt.close()
 
-def plot_energy_distribution(energy_known, energy_unknown, output_dir, epoch=None):
+def plot_energy_distribution(
+        energy_known, energy_unknown, 
+        output_dir, epoch=None
+    ):
 
-    # 转成 numpy 方便 seaborn
-    ek = energy_known.numpy() if torch.is_tensor(energy_known) else energy_known
-    eu = energy_unknown.numpy() if torch.is_tensor(energy_unknown) else energy_unknown
+    # ==========================
+    #  1. 统一字体：Times New Roman
+    # ==========================
+    plt.rcParams["font.family"] = "Times New Roman"
+    plt.rcParams["axes.unicode_minus"] = False
+    plt.rcParams["font.size"] = 16
+
+    print(energy_known.shape)
+
+    # 转 numpy
+    ek = energy_known.numpy() if torch.is_tensor(energy_known) else np.array(energy_known)
+    eu = energy_unknown.numpy() if torch.is_tensor(energy_unknown) else np.array(energy_unknown)
+
+    # ---------- 下采样 known，仅用于画图 ----------
+    max_known = min(len(ek), max(5 * len(eu), 500))  # 例如：min(5×unknown, 500)
+    if len(ek) > max_known:
+        idx = np.random.choice(len(ek), size=max_known, replace=False)
+        ek = ek[idx]
+    # -----------------------------------------
+
+    # 如果有 NaN / Inf，自动清理
+    ek = ek[np.isfinite(ek)]
+    eu = eu[np.isfinite(eu)]
 
     plt.figure(figsize=(7, 5))
 
-    # KDE
-    sns.kdeplot(ek, label='Known (treated)', linewidth=2)
-    sns.kdeplot(eu, label='Unknown (buffer)', linewidth=2)
+    # ==========================
+    # 2. KDE 曲线 + 透明填充
+    # ==========================
+    sns.kdeplot(
+        ek, label="Known",
+        linewidth=2.2, color="#1f77b4", fill=True, alpha=0.25
+    )
+    sns.kdeplot(
+        eu, label="Unknown",
+        linewidth=2.2, color="#ff7f0e", fill=True, alpha=0.25
+    )
 
-    # Histogram
-    plt.hist(ek, bins=40, alpha=0.35, label='Known', density=True)
-    plt.hist(eu, bins=40, alpha=0.35, label='Unknown', density=True)
+    # ==========================
+    # 3. 图形格式
+    # ==========================
+    plt.xlabel("Energy Score", fontsize=18, fontweight='bold')
+    plt.ylabel("Density", fontsize=18, fontweight='bold')
+    plt.legend(loc="upper left", frameon=True)
+    plt.tick_params(direction='in')
+    plt.grid(alpha=0.15)
 
-    plt.xlabel("Energy Score")
-    plt.ylabel("Density")
-    plt.legend()
     plt.tight_layout()
 
-    file_name = f'energy_score_{epoch}.jpg' if epoch else f'energy_score.jpg'
+    file_name = f'energy_score_{epoch}.pdf' if epoch else f'energy_score.pdf'
     save_path = os.path.join(output_dir, file_name)
-    plt.savefig(save_path, format='jpg', dpi=800)
-    plt.close('all')
+    plt.savefig(save_path, dpi=800, bbox_inches='tight')
+    plt.close()
 
     print(f"[plot_energy_distribution] Saved to {save_path}")

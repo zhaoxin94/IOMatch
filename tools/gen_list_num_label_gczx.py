@@ -35,7 +35,7 @@ val_idx = []
 unlabeled_idx = []
 
 # percent of labeled and validation data
-label_per_class = 50
+label_per_class = 5
 val_per_class = 0
 
 for i in range(n_source):

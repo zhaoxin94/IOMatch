@@ -25,7 +25,7 @@ if __name__ == '__main__':
                         default=1,
                         type=int,
                         help="Repeat times")
-    parser.add_argument('--seed', type=int, default=2024)
+    parser.add_argument('--seed', type=int, default=2025)
     parser.add_argument('--num_labels', type=int, default=75)
     parser.add_argument('--exp_name', type=str, default='')
     parser.add_argument("--gpu", "-g", default=0, type=int, help="Gpu ID")

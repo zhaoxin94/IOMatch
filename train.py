@@ -37,7 +37,6 @@ def get_config():
     '''
     Training Configuration of FixMatch
     '''
-
     parser.add_argument('--epoch', type=int, default=512)
     parser.add_argument('--num_train_iter',
                         type=int,
@@ -98,7 +97,6 @@ def get_config():
     '''
     Algorithms Configurations
     '''
-
     ## core algorithm setting
     parser.add_argument('-alg',
                         '--algorithm',
@@ -114,14 +112,12 @@ def get_config():
                         default=False,
                         help='use mixed precision training or not')
     parser.add_argument('--clip_grad', type=float, default=0)
-
     ## open-set setting
     parser.add_argument('--pure_unlabeled', type=str2bool, default=False)
     # parser.add_argument('--num_super_classes', type=int, default=10, help='number of seen super classes for CIFAR100')
     '''
     Data Configurations
     '''
-
     ## standard setting configurations
     parser.add_argument('--data_dir', type=str, default='./data')
     parser.add_argument('-ds', '--dataset', type=str, default='cifar10')
@@ -179,7 +175,6 @@ def get_config():
 
     # zhaoxin add
     parser.add_argument('--staged_lr', type=str2bool, default=False)
-
     parser.add_argument("--eval-only",
                         action="store_true",
                         help="evaluation only")
